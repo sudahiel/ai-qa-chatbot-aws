@@ -77,10 +77,17 @@ jobs:
 
           # Remove fields not allowed in register-task-definition input
           for k in [
-            "taskDefinitionArn","revision","status","requiresAttributes",
-            "compatibilities","registeredAt","registeredBy"
+            "taskDefinitionArn",
+            "revision",
+            "status",
+            "requiresAttributes",
+            "compatibilities",
+            "registeredAt",
+            "registeredBy",
+            "deregisteredAt",      # ← 關鍵修正
           ]:
             td.pop(k, None)
+
 
           updated = False
           for c in td.get("containerDefinitions", []):
