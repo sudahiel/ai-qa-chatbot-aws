@@ -59,29 +59,36 @@
 
 ---
 
-## Phase 3 – CI/CD 與工程化（進行中）
+## Phase 3 – CI/CD Automation on ECS（已完成）
 
-### 目前手動部署流程（現況）
-1. 修改 backend 程式碼
-2. Docker build
-3. Docker tag
-4. Docker push 到 ECR
-5. 更新 ECS service（force new deployment / rolling update）
+### 已完成自動化部署流程
+- 使用 GitHub Actions 建立 CI/CD pipeline
+- Push code 至 `master` 後自動執行：
+  1. Docker build backend image
+  2. Tag image（`gitsha-<commit>` / `dev-latest`）
+  3. Push image 至 Amazon ECR
+  4. 產生新的 ECS task definition（更新 image）
+  5. 更新 ECS service，進行 rolling update
 
-### Phase 3 目標
-- 將部署流程自動化（GitHub Actions）
-- Push code 後可自動更新 ECS
-- 建立穩定的部署基礎，再進行功能擴充
+### 驗證方式
+- ECR 中可看到對應 commit 的 image tag
+- ECS running task image 與最新 commit 對齊
+- ALB `/health` endpoint 在部署後仍回傳 HTTP 200
+
+### 後續優化方向（仍在進行）
+- IAM 權限由寬轉為 least privilege（將於 README 補充收斂紀錄）
+- 加入更明確的 deployment guard（例如環境區分）
 
 ---
 
 ## 待完成事項（Todo）
 
-- [ ] 建立 GitHub Actions CI/CD workflow
-- [ ] 自動 build / tag / push Docker image 到 ECR
-- [ ] 自動觸發 ECS service 更新
+- [x] 建立 GitHub Actions CI/CD workflow
+- [x] 自動 build / tag / push Docker image 到 ECR
+- [x] 自動更新 ECS task definition 並進行 rolling update
 - [ ] IAM 權限由寬轉為 least privilege（並在 README 記錄收斂步驟）
 - [ ] 後端功能逐步完善（AI 邏輯）
+
 
 ---
 
