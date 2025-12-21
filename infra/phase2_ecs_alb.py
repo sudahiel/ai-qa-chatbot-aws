@@ -7,7 +7,8 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
     stack = pulumi.get_stack()
 
     # 你 Phase 1 已 push 的 image tag
-    image_uri = pulumi.Output.concat(ecr_repo_url, ":phase1")
+    image_uri = pulumi.Output.concat(ecr_repo_url, ":dev-latest")
+
 
     # -----------------------------
     # Network: Minimal public VPC
@@ -53,7 +54,7 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         public_subnets.append(subnet)
 
     # -----------------------------
-    # Security Groups (create ONCE)
+    # Security Groups (create ONCE)  ← 注意：這段在迴圈外
     # -----------------------------
     alb_sg = aws.ec2.SecurityGroup(
         "albSg",
@@ -71,7 +72,17 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         to_port=80,
         cidr_blocks=["0.0.0.0/0"],
     )
-
+    # ALB -> targets (ECS tasks)
+    # 這條是關鍵：沒有 egress，ALB health check 會 Target.Timeout，最後變 503
+    aws.ec2.SecurityGroupRule(
+        "albSgEgressAll",
+        type="egress",
+        security_group_id=alb_sg.id,
+        protocol="-1",
+        from_port=0,
+        to_port=0,
+        cidr_blocks=["0.0.0.0/0"],
+    )
     ecs_sg = aws.ec2.SecurityGroup(
         "ecsSg",
         vpc_id=vpc.id,
@@ -89,9 +100,15 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         source_security_group_id=alb_sg.id,
     )
 
-
-
-
+    aws.ec2.SecurityGroupRule(
+        "ecsSgEgressAll",
+        type="egress",
+        security_group_id=ecs_sg.id,
+        protocol="-1",
+        from_port=0,
+        to_port=0,
+        cidr_blocks=["0.0.0.0/0"],
+    )
 
 
     # -----------------------------
@@ -154,8 +171,8 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         vpc_id=vpc.id,
         health_check=aws.lb.TargetGroupHealthCheckArgs(
             protocol="HTTP",
-            path="/",
-            matcher="200-499",  # 關鍵：你 "/" 回 404 也視為 healthy
+            path="/health",
+            matcher="200-499",
             interval=15,
             timeout=5,
             healthy_threshold=2,
@@ -213,6 +230,7 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         desired_count=1,
         launch_type="FARGATE",
         task_definition=task_def.arn,
+        health_check_grace_period_seconds=60,
         network_configuration=aws.ecs.ServiceNetworkConfigurationArgs(
             subnets=[s.id for s in public_subnets],
             security_groups=[ecs_sg.id],
@@ -223,9 +241,14 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
             container_name="backend",
             container_port=8080,
         )],
-        opts=pulumi.ResourceOptions(depends_on=[listener]),
+        # 這裡是重點：避免 pulumi up 把 CI/CD 更新過的 task definition 蓋回去
+        opts=pulumi.ResourceOptions(
+            depends_on=[listener],
+            ignore_changes=["task_definition"],
+        ),
         tags={"Project": project, "Stack": stack},
     )
+
 
     pulumi.export("backend_image_uri", image_uri)
     pulumi.export("alb_dns_name", lb.dns_name)
