@@ -10,8 +10,8 @@ permissions:
 env:
   AWS_REGION: ap-northeast-1
   ECR_REPO: ai-qa-chatbot-infra-dev
-  ECS_CLUSTER: appCluster-05803ac
-  ECS_SERVICE: backendService-c071a06
+  ECS_CLUSTER: appCluster-5208a55
+  ECS_SERVICE: backendService-2039b22
   CONTAINER_NAME: backend
 
 jobs:
