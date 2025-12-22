@@ -17,6 +17,7 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
 - 使用 Pulumi 管理 AWS 基礎設施（Infrastructure as Code）
 - 建立可對外服務的後端 API（FastAPI）
 - 導入並驗證 CI/CD 自動化部署流程
+- 整合 Amazon Bedrock 提供 AI 問答能力
 - 演進式收斂 IAM 權限（least privilege）
 - 練習雲端系統的工程化建置與維運思維
 
@@ -42,27 +43,20 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
   - IAM least-privilege
 - 系統支援完整生命週期（deploy / update / destroy）
 
-> ⚠️ 本專案採用「分階段完成」方式，非所有元件一次完成。
-
 ---
 
 ## 高階架構概覽（High-Level Architecture）
 
-### 已完成（Current）
+### 已完成（Implemented）
 
 - 使用者 / Browser  
-  → **CloudFront（HTTPS）**
-    - `/` → **S3 靜態前端網站（OAC，Private Bucket）**
-    - `/api/*` → **Application Load Balancer**
+  → CloudFront（HTTPS）
+    - `/` → S3 靜態前端網站（Private Bucket + OAC）
+    - `/api/*` → Application Load Balancer  
       → ECS Fargate（FastAPI）
 - Container image 儲存在 Amazon ECR
+- 後端服務整合 Amazon Bedrock（AI Q&A）
 - 應用程式日誌輸出至 CloudWatch Logs
-
-### 規劃中（Planned）
-
-- Amazon Bedrock 提供 AI 問答能力（Phase 5）
-- Ansible 作為環境 bootstrap / 設定管理工具
-- 強化 observability（metrics / alarms / tracing）
 
 ---
 
@@ -84,8 +78,8 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
 - ALB DNS：`appAlb-615a839-787066235.ap-northeast-1.elb.amazonaws.com`
 - CloudFront Domain：`d1uufeos18qnvk.cloudfront.net`
 
-> Demo 入口（HTTPS）：  
-> https://d1uufeos18qnvk.cloudfront.net
+**Demo 入口（HTTPS）：**  
+https://d1uufeos18qnvk.cloudfront.net
 
 ---
 
@@ -103,122 +97,68 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
 - 預期回應：HTTP 200
 - 狀態：Target Group 顯示為 `Healthy`（已驗證）
 
-### 其他可用路徑
-
-- Swagger UI：`GET /docs`
-- OpenAPI Spec：`GET /openapi.json`
-
-### 備註
-
-- 根路徑 `GET /` 回傳 404 為預期行為（未實作 root route）
-- 回應 header 出現 `server: uvicorn`，代表請求已成功到達後端服務
-
-> ALB DNS 可能於重新部署後變更，請以  
-> `pulumi stack output alb_dns_name` 為準。
-
 ---
 
 ## Phase 3 – CI/CD Automation on ECS（已完成）
 
-### 已完成的自動化流程
-
-- 使用 GitHub Actions 建立 CI/CD pipeline
-- 當程式碼 push 至 `master` 分支時，自動執行：
-  1. Docker build backend image
-  2. Image tag（`gitsha-<commit>` 與 `dev-latest`）
-  3. Push image 至 Amazon ECR
-  4. 註冊新的 ECS task definition revision
-  5. 更新 ECS service，進行 rolling update
-
-### 驗證方式
-
-- ECR 中可看到對應 commit 的 image tag
-- ECS running task 使用的 image 與最新 commit 一致
-- 部署後 ALB `/health` 仍回傳 HTTP 200
+- GitHub Actions 自動 build / push image 至 ECR
+- 自動更新 ECS task definition 與 service
+- Rolling update 後服務不中斷
 
 ---
 
 ## Phase 4 – Frontend on CloudFront + S3（已完成）
 
-### 架構摘要
+- S3 Private Bucket + CloudFront OAC
+- `/` → 前端靜態頁面
+- `/api/*` → ALB 後端 API
+- 前後端同域，避免 mixed content 問題
 
-- 使用 Pulumi 建立 S3 靜態前端 Bucket（Private）
-- 使用 CloudFront + Origin Access Control（OAC）安全存取 S3
-- CloudFront 設定雙 Origin：
-  - Default behavior `/` → S3 frontend
-  - Ordered behavior `/api/*` → ALB backend
+---
 
-### API 路由
+## Phase 5 – Amazon Bedrock（AI Q&A）（已完成）
 
-- `POST /api/chat`：前端經 CloudFront 呼叫後端 API
-- `GET /health`：後端健康檢查（ALB 使用）
+- `POST /api/chat`
+- 特定問題（What time is it?）回傳 deterministic 結果
+- 其他問題轉交 Amazon Bedrock（Titan Text Express）
 
-### 工程備註
+---
 
-- CloudFront 原生不支援 path rewrite  
-  因此後端 API 採用 `/api/*` 作為固定前綴  
-  以確保前端同域呼叫 API，避免 mixed content 問題。
+## Phase 6 – Ansible（尚未完成）
+
+- 規劃中：bootstrap / smoke test / automation
+
+---
+
+## Phase 7 – Observability（尚未完成）
+
+- 規劃中：metrics、alarms、latency、error rate
+
+---
+
+## Phase 8 – IAM Least Privilege（尚未完成）
+
+- 規劃中：
+  - 拆分 Infra / Runtime / CI IAM Role
+  - 收斂臨時放寬的權限
+  - 在 README 中紀錄調整過程與理由
 
 ---
 
 ## Infrastructure Lifecycle（IaC）
 
-所有 AWS 資源皆由 **Pulumi** 管理，支援完整生命週期：
-
-- `pulumi preview`：預覽基礎設施變更
-- `pulumi up`：建立或更新資源
-- `pulumi destroy`：完整銷毀所有資源
-
-此設計確保專案可在 **乾淨的 AWS 帳號中重複部署與移除**。
+- `pulumi preview`
+- `pulumi up`
+- `pulumi destroy`
 
 ---
 
-## IAM 與 Least Privilege（進行中）
+## Roadmap
 
-### 目前狀態
-
-- 初期為推進架構驗證，使用較寬鬆 IAM 權限
-- CloudFront / Infra 權限於 Phase 4 臨時放寬
-
-### 規劃中的收斂方式
-
-- 拆分 IAM Role（CI/CD、ECS Task、Infra）
-- 僅保留實際所需的最小權限
-- 在 README 紀錄權限調整與設計理由
-
-> 此做法貼近實務工程流程：  
-> **先確保系統可運作，再逐步強化安全性**
-
----
-
-## Observability（o11y）
-
-### 目前
-
-- 應用程式日誌：CloudWatch Logs
-- 服務存活檢查：ALB Health Check
-
-### 規劃中
-
-- CloudWatch Metrics 與 Alarms
-- 錯誤率與延遲監控
-- （選擇性）Distributed tracing
-
----
-
-## Roadmap（待完成事項）
-
-- [x] ECS Fargate + ALB 後端架構
-- [x] CI/CD 自動部署至 ECS
-- [x] CloudFront + S3 前端靜態網站（OAC + `/api/*` routing）
-- [ ] Amazon Bedrock（AI Q&A 能力）
-- [ ] Ansible playbook（設定與 bootstrap）
-- [ ] IAM least-privilege 收斂與紀錄
-- [ ] Observability 強化
-
----
-
-## 備註
-
-- 本專案仍在持續演進中
-- README 會隨實作進度更新
+- [x] Backend on ECS + ALB
+- [x] CI/CD automation
+- [x] CloudFront + S3 frontend
+- [x] Amazon Bedrock integration
+- [ ] Ansible
+- [ ] Observability
+- [ ] IAM least-privilege hardening
