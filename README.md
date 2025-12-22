@@ -2,7 +2,7 @@
 
 本專案為一個 **工程導向（Engineering-focused）** 的練習專案，目標是透過  
 Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一個  
-**可部署、可更新、可完整銷毀（full lifecycle）** 的 AI 問答後端系統。
+**可部署、可更新、可完整銷毀（full lifecycle）** 的 AI 問答系統。
 
 本專案刻意以「真實工程流程」推進，而非一次性完成所有功能。
 
@@ -40,7 +40,7 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
   - CI/CD
   - Observability（o11y）
   - IAM least-privilege
-- 系統需支援完整生命週期（deploy / update / destroy）
+- 系統支援完整生命週期（deploy / update / destroy）
 
 > ⚠️ 本專案採用「分階段完成」方式，非所有元件一次完成。
 
@@ -49,63 +49,79 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
 ## 高階架構概覽（High-Level Architecture）
 
 ### 已完成（Current）
-- 使用者 / Client → ALB → ECS Fargate（FastAPI）
+
+- 使用者 / Browser  
+  → **CloudFront（HTTPS）**
+    - `/` → **S3 靜態前端網站（OAC，Private Bucket）**
+    - `/api/*` → **Application Load Balancer**
+      → ECS Fargate（FastAPI）
 - Container image 儲存在 Amazon ECR
 - 應用程式日誌輸出至 CloudWatch Logs
 
 ### 規劃中（Planned）
-- CloudFront + S3 作為前端靜態網站
-- Amazon Bedrock 提供 AI 問答能力
+
+- Amazon Bedrock 提供 AI 問答能力（Phase 5）
 - Ansible 作為環境 bootstrap / 設定管理工具
-- 強化 observability（metrics / alarms）
+- 強化 observability（metrics / alarms / tracing）
 
 ---
 
 ## 目前進度（Current Status）
 
 ### 環境資訊
+
 - Pulumi Stack：`dev`
 - AWS Region：`ap-northeast-1`（Tokyo）
 - Backend Runtime：ECS Fargate
-- Load Balancer：Application Load Balancer（ALB）
 
 ### 已確認資源（Pulumi Stack Outputs）
-- S3 Bucket：`ai-qa-chatbot-infra-dev-assets`
+
+- S3 Bucket（assets）：`ai-qa-chatbot-infra-dev-assets`
+- S3 Bucket（frontend）：`ai-qa-chatbot-infra-dev-frontend`
 - ECR Repository：`ai-qa-chatbot-infra-dev`
-- ECS Cluster：`appCluster-05803ac`
-- ECS Service：`backendService-c071a06`
+- ECS Cluster：`appCluster-5208a55`
+- ECS Service：`backendService-2039b22`
+- ALB DNS：`appAlb-615a839-787066235.ap-northeast-1.elb.amazonaws.com`
+- CloudFront Domain：`d1uufeos18qnvk.cloudfront.net`
+
+> Demo 入口（HTTPS）：  
+> https://d1uufeos18qnvk.cloudfront.net
 
 ---
 
 ## Phase 2 – Backend on AWS（已完成）
 
 ### 架構摘要
+
 - 使用 Pulumi 建立 ECS Fargate + ALB
 - FastAPI（uvicorn）作為後端 API
 - ALB 透過 Target Group（IP mode）將流量導向 ECS Task
 
-### 對外存取方式
-- ALB DNS：`appAlb-d31e92c-1793100177.ap-northeast-1.elb.amazonaws.com`  
-  （瀏覽器或 curl 請自行加上 `http://`）
-
 ### 健康檢查（Health Check）
+
 - Endpoint：`GET /health`
 - 預期回應：HTTP 200
 - 狀態：Target Group 顯示為 `Healthy`（已驗證）
 
 ### 其他可用路徑
+
 - Swagger UI：`GET /docs`
 - OpenAPI Spec：`GET /openapi.json`
 
 ### 備註
+
 - 根路徑 `GET /` 回傳 404 為預期行為（未實作 root route）
 - 回應 header 出現 `server: uvicorn`，代表請求已成功到達後端服務
+
+> ALB DNS 可能於重新部署後變更，請以  
+> `pulumi stack output alb_dns_name` 為準。
 
 ---
 
 ## Phase 3 – CI/CD Automation on ECS（已完成）
 
 ### 已完成的自動化流程
+
 - 使用 GitHub Actions 建立 CI/CD pipeline
 - 當程式碼 push 至 `master` 分支時，自動執行：
   1. Docker build backend image
@@ -115,13 +131,33 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
   5. 更新 ECS service，進行 rolling update
 
 ### 驗證方式
+
 - ECR 中可看到對應 commit 的 image tag
 - ECS running task 使用的 image 與最新 commit 一致
 - 部署後 ALB `/health` 仍回傳 HTTP 200
 
-### 後續優化方向
-- IAM 權限由寬轉為 least privilege（將於 README 紀錄）
-- 加入更明確的部署防護與環境區分機制
+---
+
+## Phase 4 – Frontend on CloudFront + S3（已完成）
+
+### 架構摘要
+
+- 使用 Pulumi 建立 S3 靜態前端 Bucket（Private）
+- 使用 CloudFront + Origin Access Control（OAC）安全存取 S3
+- CloudFront 設定雙 Origin：
+  - Default behavior `/` → S3 frontend
+  - Ordered behavior `/api/*` → ALB backend
+
+### API 路由
+
+- `POST /api/chat`：前端經 CloudFront 呼叫後端 API
+- `GET /health`：後端健康檢查（ALB 使用）
+
+### 工程備註
+
+- CloudFront 原生不支援 path rewrite  
+  因此後端 API 採用 `/api/*` 作為固定前綴  
+  以確保前端同域呼叫 API，避免 mixed content 問題。
 
 ---
 
@@ -140,13 +176,15 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
 ## IAM 與 Least Privilege（進行中）
 
 ### 目前狀態
-- 開發初期使用較寬鬆的 IAM 權限
-- 目標先驗證架構與部署流程正確性
+
+- 初期為推進架構驗證，使用較寬鬆 IAM 權限
+- CloudFront / Infra 權限於 Phase 4 臨時放寬
 
 ### 規劃中的收斂方式
+
 - 拆分 IAM Role（CI/CD、ECS Task、Infra）
 - 僅保留實際所需的最小權限
-- 在 README 中紀錄權限調整與設計理由
+- 在 README 紀錄權限調整與設計理由
 
 > 此做法貼近實務工程流程：  
 > **先確保系統可運作，再逐步強化安全性**
@@ -156,10 +194,12 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
 ## Observability（o11y）
 
 ### 目前
+
 - 應用程式日誌：CloudWatch Logs
 - 服務存活檢查：ALB Health Check
 
 ### 規劃中
+
 - CloudWatch Metrics 與 Alarms
 - 錯誤率與延遲監控
 - （選擇性）Distributed tracing
@@ -170,14 +210,13 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
 
 - [x] ECS Fargate + ALB 後端架構
 - [x] CI/CD 自動部署至 ECS
-- [ ] CloudFront + S3 前端靜態網站
+- [x] CloudFront + S3 前端靜態網站（OAC + `/api/*` routing）
 - [ ] Amazon Bedrock（AI Q&A 能力）
 - [ ] Ansible playbook（設定與 bootstrap）
 - [ ] IAM least-privilege 收斂與紀錄
 - [ ] Observability 強化
 
 ---
-
 
 ## 備註
 
