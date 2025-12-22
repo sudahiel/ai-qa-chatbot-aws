@@ -1,5 +1,7 @@
+import json
 import pulumi
 import pulumi_aws as aws
+
 
 
 def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
@@ -151,6 +153,51 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         role=task_exec_role.name,
         policy_arn="arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
     )
+    # -----------------------------
+    # IAM Task Role (for app / Bedrock)
+    # -----------------------------
+    task_role = aws.iam.Role(
+        "taskRole",
+        assume_role_policy=aws.iam.get_policy_document(statements=[
+            aws.iam.GetPolicyDocumentStatementArgs(
+                effect="Allow",
+                principals=[aws.iam.GetPolicyDocumentStatementPrincipalArgs(
+                    type="Service",
+                    identifiers=["ecs-tasks.amazonaws.com"]
+                )],
+                actions=["sts:AssumeRole"]
+            )
+        ]).json,
+        tags={"Project": project, "Stack": stack},
+    )
+
+    bedrock_model_arn = pulumi.Output.concat(
+        "arn:aws:bedrock:", aws.config.region, "::foundation-model/amazon.titan-text-express-v1"
+    )
+
+    bedrock_invoke_managed_policy = aws.iam.Policy(
+        "bedrockInvokeManagedPolicy",
+        policy=bedrock_model_arn.apply(lambda arn: json.dumps({
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Sid": "InvokeSpecificBedrockModel",
+                "Effect": "Allow",
+                "Action": [
+                    "bedrock:InvokeModel",
+                    "bedrock:InvokeModelWithResponseStream"
+                ],
+                "Resource": arn
+            }]
+        })),
+        # 先不要 tags，避免需要 iam:TagPolicy!! tags={"Project": project, "Stack": stack},
+    )
+
+    aws.iam.RolePolicyAttachment(
+        "taskRoleBedrockInvokeAttach",
+        role=task_role.name,
+        policy_arn=bedrock_invoke_managed_policy.arn,
+    )
+
 
     # -----------------------------
     # ALB + Target Group + Listener
@@ -203,6 +250,7 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         network_mode="awsvpc",
         requires_compatibilities=["FARGATE"],
         execution_role_arn=task_exec_role.arn,
+        task_role_arn=task_role.arn, 
         container_definitions=pulumi.Output.json_dumps([{
             "name": "backend",
             "image": image_uri,
@@ -244,7 +292,7 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         # 這裡是重點：避免 pulumi up 把 CI/CD 更新過的 task definition 蓋回去
         opts=pulumi.ResourceOptions(
             depends_on=[listener],
-            ignore_changes=["task_definition"],
+            #先備註掉通了會加回去ignore_changes=["task_definition"],
         ),
         tags={"Project": project, "Stack": stack},
     )

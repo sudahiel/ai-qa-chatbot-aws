@@ -140,7 +140,7 @@ def build_phase4_cloudfront_s3_frontend(
                 max_ttl=0,
                 forwarded_values=aws.cloudfront.DistributionOrderedCacheBehaviorForwardedValuesArgs(
                     query_string=True,
-                    headers=["Authorization", "Content-Type", "Origin"],
+                    headers=["*"],
                     cookies=aws.cloudfront.DistributionOrderedCacheBehaviorForwardedValuesCookiesArgs(
                         forward="all"
                     ),
