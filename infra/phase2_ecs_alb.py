@@ -254,3 +254,6 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
     pulumi.export("alb_dns_name", lb.dns_name)
     pulumi.export("ecs_cluster_name", cluster.name)
     pulumi.export("ecs_service_name", service.name)
+
+
+    return lb.dns_name
