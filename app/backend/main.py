@@ -31,19 +31,18 @@ bedrock = boto3.client("bedrock-runtime", region_name=AWS_REGION)
 
 
 def ask_bedrock(message: str) -> str:
-    body = {
-        "messages": [
-            {
-                "role": "user",
-                "content": [{"text": message}],
-            }
+    resp = bedrock.converse(
+        modelId=BEDROCK_MODEL_ID,
+        messages=[
+            {"role": "user", "content": [{"text": message}]}
         ],
-        "inferenceConfig": {
+        inferenceConfig={
             "maxTokens": 256,
             "temperature": 0.5,
             "topP": 0.9,
         },
-    }
+    )
+    return resp["output"]["message"]["content"][0]["text"].strip()
 
     resp = bedrock.invoke_model(
         modelId=BEDROCK_MODEL_ID,
