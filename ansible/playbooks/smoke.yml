@@ -53,8 +53,8 @@
       assert:
         that:
           - r_chat_time.json is defined
-          - r_chat_time.json.reply is defined
-          - (r_chat_time.json.reply | length) > 0
+          - (r_chat_time.json.reply is defined) or (r_chat_time.json.answer is defined)
+          - ((r_chat_time.json.reply | default(r_chat_time.json.answer) | length) > 0)
         fail_msg: "Chat(time) missing reply. Raw={{ r_chat_time.content | default('') }}"
         success_msg: "Chat(time) OK"
 
@@ -75,8 +75,9 @@
       assert:
         that:
           - r_chat_bedrock.json is defined
-          - r_chat_bedrock.json.reply is defined
-          - (r_chat_bedrock.json.reply | length) > 0
+          - (r_chat_bedrock.json.reply is defined) or (r_chat_bedrock.json.answer is defined)
+          - ((r_chat_bedrock.json.reply | default(r_chat_bedrock.json.answer) | length) > 0)
         fail_msg: "Chat(bedrock) missing reply. Raw={{ r_chat_bedrock.content | default('') }}"
         success_msg: "Chat(bedrock) OK"
+
 

@@ -1,0 +1,47 @@
+name: smoke test after deploy
+
+on:
+  workflow_run:
+    workflows: ["Deploy backend to ECS (dev)"]
+    types: [completed]
+
+jobs:
+  smoke:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible
+
+      # 等 ECS rolling update / CloudFront propagation
+      - name: Wait for rollout
+        run: sleep 20
+
+      # Smoke test with retry (avoid transient deploy window)
+      - name: Run Ansible smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5; do
+            echo "== Smoke attempt $i =="
+            if ansible-playbook -i ansible/inventory/localhost.yml ansible/playbooks/smoke.yml; then
+              echo "Smoke OK"
+              exit 0
+            fi
+            echo "Smoke failed, retry in 15s..."
+            sleep 15
+          done
+          echo "Smoke still failing after retries."
+          exit 1
