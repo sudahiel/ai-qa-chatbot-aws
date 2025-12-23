@@ -1,0 +1,8 @@
+﻿cloudfront_domain: "d1uufeos18qnvk.cloudfront.net"
+base_url: "https://{{ cloudfront_domain }}"
+
+frontend_path: "/"
+health_path: "/api/health"
+chat_path: "/api/chat"
+
+timeout_seconds: 15

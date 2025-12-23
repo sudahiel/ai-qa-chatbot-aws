@@ -1,4 +1,4 @@
-import json
+﻿import json
 import os
 from datetime import datetime, timezone
 
@@ -52,6 +52,11 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/api/health")
+def api_health():
+    return {"status": "ok"}
+
+
 @app.post("/api/chat")
 def chat(payload: dict):
     message = (payload.get("message") or "").strip()
@@ -71,3 +76,4 @@ def chat(payload: dict):
         answer = f"[bedrock_error] {type(e).__name__}: {str(e)}"
 
     return {"question": message, "answer": answer}
+

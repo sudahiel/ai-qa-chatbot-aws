@@ -1,0 +1,82 @@
+﻿- name: AI Q&A Chatbot Smoke Test (CloudFront -> S3 + /api/* -> ALB -> ECS -> Bedrock)
+  hosts: localhost
+  gather_facts: false
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  vars:
+    headers_json:
+      Content-Type: "application/json"
+
+  tasks:
+    - name: Show base url
+      debug:
+        msg:
+          - "Base URL: {{ base_url }}"
+          - "Frontend: {{ base_url }}{{ frontend_path }}"
+          - "Health:   {{ base_url }}{{ health_path }}"
+          - "Chat:     {{ base_url }}{{ chat_path }}"
+
+    - name: Check frontend (GET /)
+      uri:
+        url: "{{ base_url }}{{ frontend_path }}"
+        method: GET
+        return_content: false
+        status_code: [200, 304]
+        timeout: "{{ timeout_seconds }}"
+      register: r_frontend
+
+    - name: Check health (GET /api/health)
+      uri:
+        url: "{{ base_url }}{{ health_path }}"
+        method: GET
+        return_content: true
+        status_code: 200
+        timeout: "{{ timeout_seconds }}"
+      register: r_health
+
+    - name: Chat deterministic (POST /api/chat, 'What time is it?')
+      uri:
+        url: "{{ base_url }}{{ chat_path }}"
+        method: POST
+        headers: "{{ headers_json }}"
+        body_format: json
+        body:
+          message: "What time is it?"
+        return_content: true
+        status_code: 200
+        timeout: "{{ timeout_seconds }}"
+      register: r_chat_time
+
+    - name: Validate deterministic response has reply
+      assert:
+        that:
+          - r_chat_time.json is defined
+          - r_chat_time.json.reply is defined
+          - (r_chat_time.json.reply | length) > 0
+        fail_msg: "Chat(time) missing reply. Raw={{ r_chat_time.content | default('') }}"
+        success_msg: "Chat(time) OK"
+
+    - name: Chat bedrock (POST /api/chat, general question)
+      uri:
+        url: "{{ base_url }}{{ chat_path }}"
+        method: POST
+        headers: "{{ headers_json }}"
+        body_format: json
+        body:
+          message: "Tell me a short joke."
+        return_content: true
+        status_code: 200
+        timeout: "{{ timeout_seconds }}"
+      register: r_chat_bedrock
+
+    - name: Validate bedrock response has reply
+      assert:
+        that:
+          - r_chat_bedrock.json is defined
+          - r_chat_bedrock.json.reply is defined
+          - (r_chat_bedrock.json.reply | length) > 0
+        fail_msg: "Chat(bedrock) missing reply. Raw={{ r_chat_bedrock.content | default('') }}"
+        success_msg: "Chat(bedrock) OK"
+
