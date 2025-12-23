@@ -76,11 +76,8 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
 - ECR Repository：ai-qa-chatbot-infra-dev
 - ECS Cluster：appCluster-5208a55
 - ECS Service：backendService-2039b22
-- ALB DNS：appAlb-615a839-787066235.ap-northeast-1.elb.amazonaws.com
-- CloudFront Domain：d1uufeos18qnvk.cloudfront.net
-
-Demo 入口（HTTPS）：  
-CloudFront Domain（請見上方輸出）
+- ALB DNS：由 Pulumi 輸出取得
+- CloudFront Domain：由 Pulumi 輸出取得
 
 ---
 
@@ -94,7 +91,7 @@ CloudFront Domain（請見上方輸出）
 
 ### 健康檢查（Health Check）
 
-- Endpoint：GET /health
+- Endpoint：GET `/health`
 - 預期回應：HTTP 200
 - 狀態：Target Group 顯示為 Healthy（已驗證）
 
@@ -119,9 +116,9 @@ CloudFront Domain（請見上方輸出）
 
 ## Phase 5 – Amazon Bedrock（AI Q&A）（已完成）
 
-- POST /api/chat
+- POST `/api/chat`
 - 特定問題（What time is it?）回傳 deterministic 結果
-- 其他問題轉交 Amazon Bedrock（Titan Text Express）
+- 其他問題轉交 Amazon Bedrock（目前使用 Titan Text 系列模型）
 
 ---
 
@@ -135,14 +132,14 @@ CloudFront Domain（請見上方輸出）
 - Ansible 以 black-box 方式驗證系統
 - 不需登入 AWS、不需 SSH、不需額外 IAM 權限
 - 驗證對象為實際對外服務的 CloudFront 入口
-- 以 ephemeral container（Docker）執行，避免污染本機環境
+- 以 ephemeral container 執行，避免污染本機環境
 
 ### Smoke Test 驗證項目
 
-- CloudFront /
-- CloudFront /api/health
-- /api/chat deterministic path（What time is it?）
-- /api/chat Amazon Bedrock path（一般問題）
+- CloudFront `/`
+- CloudFront `/api/health`
+- `/api/chat` deterministic path
+- `/api/chat` Bedrock path
 
 ---
 
@@ -171,36 +168,49 @@ CloudFront Domain（請見上方輸出）
 
 ---
 
-## Observability 測試方式（How to Verify）
+## Phase 8 – IAM Least Privilege（已完成）
 
-1. CloudWatch Console
-   - 進入 CloudWatch → Alarms
-   - 確認 4 個 alarm 存在且狀態正常
+### 背景與設計取捨
 
-2. 後端健康模擬
-   - 停止或破壞 /health endpoint
-   - 確認 Target Group Unhealthy alarm 進入 ALARM 狀態
+在專案初期，為了加速系統建置與驗證流程，  
+CI 與基礎設施操作曾使用較寬鬆的 IAM 權限（例如直接使用 IAM User access key）。
 
-3. IaC 驗證
-   - pulumi preview
-   - pulumi up
-   - pulumi destroy
+當系統架構與部署流程穩定後，本階段針對 IAM 權限進行 **工程化收斂**，  
+以符合實務上的 least-privilege 原則。
 
----
+### 實作內容
 
-## Phase 8 – IAM Least Privilege（規劃中）
+本階段完成以下拆分與調整：
 
-- 拆分 Infra / Runtime / CI IAM Role
-- 收斂臨時放寬的權限
-- 在 README 中紀錄調整過程與理由
+- **Infra 身分（人 / CLI / Pulumi）**
+  - 僅用於基礎設施建置與管理
+  - 與 CI / Runtime 身分分離
+
+- **CI 身分（GitHub Actions）**
+  - 改用 GitHub Actions OIDC 機制
+  - 以 Assume Role 方式取得臨時憑證
+  - 權限僅包含：
+    - ECR image push
+    - ECS task definition 註冊與 service 更新
+    - 限定範圍的 `iam:PassRole`
+
+- **Runtime 身分（ECS Task Role / Execution Role）**
+  - Task Role 僅允許呼叫 Amazon Bedrock
+  - Execution Role 僅負責 image pull、log 與 ECS Exec
+
+### 成果
+
+- CI 不再使用長期 access key
+- CI / Infra / Runtime 身分與權限責任明確分離
+- 系統仍維持完整 deploy / update / destroy 能力
 
 ---
 
 ## Infrastructure Lifecycle（IaC）
 
-- pulumi preview
-- pulumi up
-- pulumi destroy
+- `pulumi preview`
+- `pulumi up`
+- `pulumi destroy`
 
 ---
 
@@ -212,12 +222,6 @@ CloudFront Domain（請見上方輸出）
 - [x] Amazon Bedrock integration
 - [x] Ansible-based smoke test
 - [x] Observability (CloudWatch alarms)
-- [ ] IAM least-privilege hardening
-
-（可選）下一步讓它更像 production
-
-如果你想「再加一點點就超像真的」我會建議下一個 Phase 7.5：
-
-SNS 通知（email / Slack webhook）
-
-或加 CloudFront 5xxRate（入口 CDN 層也有告警）
+- [x] IAM least-privilege hardening
+- [ ] Bedrock model configuration refinement
+- [ ] Production environment (prod stack)

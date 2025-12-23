@@ -22,8 +22,11 @@ app.add_middleware(
 )
 
 AWS_REGION = os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", "ap-northeast-1"))
-BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "amazon.titan-text-express-v1")
-
+BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID")
+if not BEDROCK_MODEL_ID:
+    raise RuntimeError("BEDROCK_MODEL_ID is not set")
+print(f"[boot] AWS_REGION={AWS_REGION}")
+print(f"[boot] BEDROCK_MODEL_ID={BEDROCK_MODEL_ID}")
 bedrock = boto3.client("bedrock-runtime", region_name=AWS_REGION)
 
 
