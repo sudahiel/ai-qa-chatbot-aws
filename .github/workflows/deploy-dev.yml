@@ -8,13 +8,16 @@ permissions:
   contents: read
   id-token: write
 
-
 env:
   AWS_REGION: ap-northeast-1
   ECR_REPO: ai-qa-chatbot-infra-dev
   ECS_CLUSTER: appCluster-5208a55
   ECS_SERVICE: backendService-2039b22
   CONTAINER_NAME: backend
+
+  # ✅ Force Bedrock model id at deploy-time (stop "stuck on nova")
+  # On-demand & stable:
+  BEDROCK_MODEL_ID: anthropic.claude-3-haiku-20240307-v1:0
 
 jobs:
   deploy:
@@ -50,7 +53,7 @@ jobs:
 
           echo "IMAGE_URI=${IMAGE_URI_SHA}" >> $GITHUB_ENV
 
-      - name: Render new task definition with updated image
+      - name: Render new task definition with updated image + env
         run: |
           set -euo pipefail
 
@@ -72,6 +75,10 @@ jobs:
 
           container_name = os.environ["CONTAINER_NAME"]
           image_uri = os.environ["IMAGE_URI"]
+          bedrock_model_id = os.environ.get("BEDROCK_MODEL_ID", "").strip()
+
+          if not bedrock_model_id:
+            raise SystemExit("BEDROCK_MODEL_ID is empty. Please set it in workflow env.")
 
           with open("taskdef.json", "r", encoding="utf-8") as f:
             td = json.load(f)
@@ -85,15 +92,28 @@ jobs:
             "compatibilities",
             "registeredAt",
             "registeredBy",
-            "deregisteredAt",      # ← 關鍵修正
+            "deregisteredAt",
           ]:
             td.pop(k, None)
-
 
           updated = False
           for c in td.get("containerDefinitions", []):
             if c.get("name") == container_name:
+              # Update image
               c["image"] = image_uri
+
+              # Force env var so deploy does not "copy nova forever"
+              env = c.get("environment") or []
+              found = False
+              for item in env:
+                if item.get("name") == "BEDROCK_MODEL_ID":
+                  item["value"] = bedrock_model_id
+                  found = True
+                  break
+              if not found:
+                env.append({"name": "BEDROCK_MODEL_ID", "value": bedrock_model_id})
+              c["environment"] = env
+
               updated = True
               break
 
@@ -105,6 +125,7 @@ jobs:
             json.dump(td, f)
 
           print("Rendered newtaskdef.json with image:", image_uri)
+          print("Forced BEDROCK_MODEL_ID:", bedrock_model_id)
           PY
 
       - name: Register new task definition
