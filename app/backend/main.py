@@ -32,9 +32,14 @@ bedrock = boto3.client("bedrock-runtime", region_name=AWS_REGION)
 
 def ask_bedrock(message: str) -> str:
     body = {
-        "inputText": message,
-        "textGenerationConfig": {
-            "maxTokenCount": 256,
+        "messages": [
+            {
+                "role": "user",
+                "content": [{"text": message}],
+            }
+        ],
+        "inferenceConfig": {
+            "maxTokens": 256,
             "temperature": 0.5,
             "topP": 0.9,
         },
@@ -46,8 +51,12 @@ def ask_bedrock(message: str) -> str:
         contentType="application/json",
         accept="application/json",
     )
+
     result = json.loads(resp["body"].read())
-    return result["results"][0]["outputText"].strip()
+
+    # Nova 回傳結構
+    return result["output"]["message"]["content"][0]["text"].strip()
+
 
 
 @app.get("/health")
