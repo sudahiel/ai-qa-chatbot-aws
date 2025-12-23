@@ -3,14 +3,12 @@ import pulumi
 import pulumi_aws as aws
 
 
-
 def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
     project = pulumi.get_project()
     stack = pulumi.get_stack()
 
     # 你 Phase 1 已 push 的 image tag
     image_uri = pulumi.Output.concat(ecr_repo_url, ":dev-latest")
-
 
     # -----------------------------
     # Network: Minimal public VPC
@@ -22,7 +20,7 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         enable_dns_support=True,
         tags={"Project": project, "Stack": stack},
     )
-    #igw=（Internet Gateway）
+    # igw = Internet Gateway
     igw = aws.ec2.InternetGateway(
         "appIgw",
         vpc_id=vpc.id,
@@ -32,10 +30,14 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
     public_rt = aws.ec2.RouteTable(
         "publicRt",
         vpc_id=vpc.id,
-        routes=[aws.ec2.RouteTableRouteArgs(cidr_block="0.0.0.0/0", gateway_id=igw.id)],
+        routes=[aws.ec2.RouteTableRouteArgs(
+            cidr_block="0.0.0.0/0",
+            gateway_id=igw.id
+        )],
         tags={"Project": project, "Stack": stack},
     )
-    #AZ=Availability Zone（可用區）
+
+    # AZ = Availability Zone
     azs = aws.get_availability_zones(state="available").names[:2]
 
     public_subnets = []
@@ -56,7 +58,7 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         public_subnets.append(subnet)
 
     # -----------------------------
-    # Security Groups (create ONCE)  ← 注意：這段在迴圈外
+    # Security Groups (create ONCE)
     # -----------------------------
     alb_sg = aws.ec2.SecurityGroup(
         "albSg",
@@ -74,6 +76,7 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         to_port=80,
         cidr_blocks=["0.0.0.0/0"],
     )
+
     # ALB -> targets (ECS tasks)
     # 這條是關鍵：沒有 egress，ALB health check 會 Target.Timeout，最後變 503
     aws.ec2.SecurityGroupRule(
@@ -85,6 +88,7 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         to_port=0,
         cidr_blocks=["0.0.0.0/0"],
     )
+
     ecs_sg = aws.ec2.SecurityGroup(
         "ecsSg",
         vpc_id=vpc.id,
@@ -111,7 +115,6 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         to_port=0,
         cidr_blocks=["0.0.0.0/0"],
     )
-
 
     # -----------------------------
     # CloudWatch Logs
@@ -153,8 +156,9 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         role=task_exec_role.name,
         policy_arn="arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
     )
+
     # -----------------------------
-    # IAM Task Role (for app / Bedrock)
+    # IAM Task Role (for app / Bedrock / ECS Exec)
     # -----------------------------
     task_role = aws.iam.Role(
         "taskRole",
@@ -171,6 +175,15 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         tags={"Project": project, "Stack": stack},
     )
 
+    # >>> ECS EXEC FIX <<<
+    # ECS Exec 官方建議：權限一定要掛在「task role」，不是 execution role
+    aws.iam.RolePolicyAttachment(
+        "taskRoleEcsExecAttach",
+        role=task_role.name,
+        policy_arn="arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+    )
+
+    # Bedrock model invoke
     bedrock_model_arn = pulumi.Output.concat(
         "arn:aws:bedrock:", aws.config.region, "::foundation-model/amazon.titan-text-express-v1"
     )
@@ -189,7 +202,6 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
                 "Resource": arn
             }]
         })),
-        # 先不要 tags，避免需要 iam:TagPolicy!! tags={"Project": project, "Stack": stack},
     )
 
     aws.iam.RolePolicyAttachment(
@@ -197,7 +209,6 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         role=task_role.name,
         policy_arn=bedrock_invoke_managed_policy.arn,
     )
-
 
     # -----------------------------
     # ALB + Target Group + Listener
@@ -220,10 +231,6 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
             protocol="HTTP",
             path="/health",
             matcher="200-499",
-            interval=15,
-            timeout=5,
-            healthy_threshold=2,
-            unhealthy_threshold=2,
         ),
         tags={"Project": project, "Stack": stack},
     )
@@ -250,14 +257,13 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         network_mode="awsvpc",
         requires_compatibilities=["FARGATE"],
         execution_role_arn=task_exec_role.arn,
-        task_role_arn=task_role.arn, 
+        task_role_arn=task_role.arn,
         container_definitions=pulumi.Output.json_dumps([{
             "name": "backend",
             "image": image_uri,
             "essential": True,
             "portMappings": [{
                 "containerPort": 8080,
-                "hostPort": 8080,
                 "protocol": "tcp"
             }],
             "logConfiguration": {
@@ -278,6 +284,7 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         desired_count=1,
         launch_type="FARGATE",
         task_definition=task_def.arn,
+        enable_execute_command=True,  # ← ECS Exec 開關
         health_check_grace_period_seconds=60,
         network_configuration=aws.ecs.ServiceNetworkConfigurationArgs(
             subnets=[s.id for s in public_subnets],
@@ -289,19 +296,20 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
             container_name="backend",
             container_port=8080,
         )],
-        # 這裡是重點：避免 pulumi up 把 CI/CD 更新過的 task definition 蓋回去
         opts=pulumi.ResourceOptions(
             depends_on=[listener],
-            #先備註掉通了會加回去ignore_changes=["task_definition"],
         ),
         tags={"Project": project, "Stack": stack},
     )
 
-
-    pulumi.export("backend_image_uri", image_uri)
     pulumi.export("alb_dns_name", lb.dns_name)
     pulumi.export("ecs_cluster_name", cluster.name)
     pulumi.export("ecs_service_name", service.name)
 
-
-    return lb.dns_name
+    return {
+        "alb_dns_name": lb.dns_name,
+        "lb": lb,
+        "tg": tg,
+        "cluster": cluster,
+        "service": service,
+    }

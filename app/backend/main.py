@@ -59,7 +59,11 @@ def api_health():
 
 @app.post("/api/chat")
 def chat(payload: dict):
-    message = (payload.get("message") or "").strip()
+    # Accept both "message" (canonical) and "question" (compat)
+    message = (
+        (payload.get("message") or "").strip()
+        or (payload.get("question") or "").strip()
+    )
 
     # Simple deterministic answer to satisfy the assignment example
     if message.lower() in {"what time is it?", "what time is it"}:

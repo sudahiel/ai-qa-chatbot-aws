@@ -28,8 +28,8 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
 本專案對齊以下題目要求進行設計與實作：
 
 - 使用 Pulumi 進行 IaC 管理
-- 使用 Ansible（規劃中）進行設定與自動化
-- AWS 架構包含（已完成 / 規劃中）：
+- 使用 Ansible 進行自動化驗證（post-deploy smoke test）
+- AWS 架構包含：
   - Application Load Balancer（ALB）
   - ECS Fargate
   - Amazon ECR
@@ -51,12 +51,13 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
 
 - 使用者 / Browser  
   → CloudFront（HTTPS）
-    - `/` → S3 靜態前端網站（Private Bucket + OAC）
-    - `/api/*` → Application Load Balancer  
-      → ECS Fargate（FastAPI）
+  - `/` → S3 靜態前端網站（Private Bucket + OAC）
+  - `/api/*` → Application Load Balancer  
+    → ECS Fargate（FastAPI）
 - Container image 儲存在 Amazon ECR
 - 後端服務整合 Amazon Bedrock（AI Q&A）
 - 應用程式日誌輸出至 CloudWatch Logs
+- 系統關鍵元件具備基礎監控與告警（Phase 7）
 
 ---
 
@@ -64,22 +65,22 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
 
 ### 環境資訊
 
-- Pulumi Stack：`dev`
-- AWS Region：`ap-northeast-1`（Tokyo）
+- Pulumi Stack：dev
+- AWS Region：ap-northeast-1（Tokyo）
 - Backend Runtime：ECS Fargate
 
 ### 已確認資源（Pulumi Stack Outputs）
 
-- S3 Bucket（assets）：`ai-qa-chatbot-infra-dev-assets`
-- S3 Bucket（frontend）：`ai-qa-chatbot-infra-dev-frontend`
-- ECR Repository：`ai-qa-chatbot-infra-dev`
-- ECS Cluster：`appCluster-5208a55`
-- ECS Service：`backendService-2039b22`
-- ALB DNS：`appAlb-615a839-787066235.ap-northeast-1.elb.amazonaws.com`
-- CloudFront Domain：`d1uufeos18qnvk.cloudfront.net`
+- S3 Bucket（assets）：ai-qa-chatbot-infra-dev-assets
+- S3 Bucket（frontend）：ai-qa-chatbot-infra-dev-frontend
+- ECR Repository：ai-qa-chatbot-infra-dev
+- ECS Cluster：appCluster-5208a55
+- ECS Service：backendService-2039b22
+- ALB DNS：appAlb-615a839-787066235.ap-northeast-1.elb.amazonaws.com
+- CloudFront Domain：d1uufeos18qnvk.cloudfront.net
 
-**Demo 入口（HTTPS）：**  
-https://d1uufeos18qnvk.cloudfront.net
+Demo 入口（HTTPS）：  
+CloudFront Domain（請見上方輸出）
 
 ---
 
@@ -93,9 +94,9 @@ https://d1uufeos18qnvk.cloudfront.net
 
 ### 健康檢查（Health Check）
 
-- Endpoint：`GET /health`
+- Endpoint：GET /health
 - 預期回應：HTTP 200
-- 狀態：Target Group 顯示為 `Healthy`（已驗證）
+- 狀態：Target Group 顯示為 Healthy（已驗證）
 
 ---
 
@@ -118,38 +119,88 @@ https://d1uufeos18qnvk.cloudfront.net
 
 ## Phase 5 – Amazon Bedrock（AI Q&A）（已完成）
 
-- `POST /api/chat`
+- POST /api/chat
 - 特定問題（What time is it?）回傳 deterministic 結果
 - 其他問題轉交 Amazon Bedrock（Titan Text Express）
 
 ---
 
-## Phase 6 – Ansible（尚未完成）
+## Phase 6 – Ansible Automation（已完成）
 
-- 規劃中：bootstrap / smoke test / automation
+本專案導入 **Ansible 作為自動化驗證工具**，而非用於主機設定或 SSH 管理，  
+而是專注於 **部署後（post-deploy）的產品入口驗證（smoke test）**。
+
+### 設計重點
+
+- Ansible 以 black-box 方式驗證系統
+- 不需登入 AWS、不需 SSH、不需額外 IAM 權限
+- 驗證對象為實際對外服務的 CloudFront 入口
+- 以 ephemeral container（Docker）執行，避免污染本機環境
+
+### Smoke Test 驗證項目
+
+- CloudFront /
+- CloudFront /api/health
+- /api/chat deterministic path（What time is it?）
+- /api/chat Amazon Bedrock path（一般問題）
 
 ---
 
-## Phase 7 – Observability（尚未完成）
+## Phase 6.5 – Post-deploy Smoke Test（CI 自動化）（已完成）
 
-- 規劃中：metrics、alarms、latency、error rate
+- Deploy workflow 成功後自動觸發 Ansible Smoke Test
+- 由 GitHub Actions runner 執行
+- 對 CloudFront 對外入口進行端到端驗證
+- Smoke Test 失敗即視為 deploy 失敗（Release Gate）
 
 ---
 
-## Phase 8 – IAM Least Privilege（尚未完成）
+## Phase 7 – Observability（已完成）
 
-- 規劃中：
-  - 拆分 Infra / Runtime / CI IAM Role
-  - 收斂臨時放寬的權限
-  - 在 README 中紀錄調整過程與理由
+本階段導入 **最小可交付（Minimum Viable Observability）**，  
+針對既有後端服務建立關鍵 CloudWatch 指標告警。
+
+### 已實作告警（CloudWatch Alarms）
+
+- ALB 5XX（ELB generated）
+- Target Group Unhealthy（HealthyHostCount < 1）
+- ECS CPU High（>= 80%, 3 minutes）
+- ECS Memory High（>= 80%, 3 minutes）
+
+所有告警皆由 Pulumi 管理，隨 stack 生命週期建立 / 更新 / 銷毀。
+
+---
+
+## Observability 測試方式（How to Verify）
+
+1. CloudWatch Console
+   - 進入 CloudWatch → Alarms
+   - 確認 4 個 alarm 存在且狀態正常
+
+2. 後端健康模擬
+   - 停止或破壞 /health endpoint
+   - 確認 Target Group Unhealthy alarm 進入 ALARM 狀態
+
+3. IaC 驗證
+   - pulumi preview
+   - pulumi up
+   - pulumi destroy
+
+---
+
+## Phase 8 – IAM Least Privilege（規劃中）
+
+- 拆分 Infra / Runtime / CI IAM Role
+- 收斂臨時放寬的權限
+- 在 README 中紀錄調整過程與理由
 
 ---
 
 ## Infrastructure Lifecycle（IaC）
 
-- `pulumi preview`
-- `pulumi up`
-- `pulumi destroy`
+- pulumi preview
+- pulumi up
+- pulumi destroy
 
 ---
 
@@ -159,6 +210,14 @@ https://d1uufeos18qnvk.cloudfront.net
 - [x] CI/CD automation
 - [x] CloudFront + S3 frontend
 - [x] Amazon Bedrock integration
-- [ ] Ansible
-- [ ] Observability
+- [x] Ansible-based smoke test
+- [x] Observability (CloudWatch alarms)
 - [ ] IAM least-privilege hardening
+
+（可選）下一步讓它更像 production
+
+如果你想「再加一點點就超像真的」我會建議下一個 Phase 7.5：
+
+SNS 通知（email / Slack webhook）
+
+或加 CloudFront 5xxRate（入口 CDN 層也有告警）

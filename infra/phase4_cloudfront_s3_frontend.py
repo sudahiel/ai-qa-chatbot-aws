@@ -35,7 +35,6 @@ def upload_dir_as_s3_objects(bucket_name: pulumi.Input[str], src_dir: str):
 
     return objects
 
-
 def build_phase4_cloudfront_s3_frontend(
     *,
     project: str,
