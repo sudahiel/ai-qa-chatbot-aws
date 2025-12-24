@@ -32,6 +32,9 @@ jobs:
           role-to-assume: arn:aws:iam::472655909477:role/ai-qa-chatbot-ci-deploy-dev
           aws-region: ${{ env.AWS_REGION }}
 
+      # -----------------------------
+      # ECR build & push
+      # -----------------------------
       - name: Login to Amazon ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -51,21 +54,40 @@ jobs:
           echo "IMAGE_URI=${IMAGE_URI_SHA}" >> "$GITHUB_ENV"
           echo "[INFO] IMAGE_URI=${IMAGE_URI_SHA}"
 
+      # -----------------------------
+      # Pulumi (這段你原本完全缺)
+      # -----------------------------
+      - name: Install Pulumi CLI
+        uses: pulumi/actions@v5
+
+      - name: Pulumi login (non-interactive)
+        shell: bash
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          pulumi login
+          pulumi whoami || true
+
+      # -----------------------------
+      # Ansible
+      # -----------------------------
       - name: Install Ansible
         run: |
           python -m pip install --upgrade pip
           pip install ansible
 
-      # ✅ 唯一保留的 Debug：看「Ansible實際吃到的變數」
       - name: Debug ansible effective vars
         shell: bash
         run: |
           set -euo pipefail
           ansible-inventory -i ansible/inventory/dev.yml --host localhost --yaml | sed -n '1,200p'
 
-      # ✅ 正式 Deploy（固定這樣，不要再改）
       - name: Deploy via Ansible (CD)
         shell: bash
+        env:
+          # ⚠️ 關鍵：Pulumi token 必須在 ansible 執行時也存在
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           cd ansible
