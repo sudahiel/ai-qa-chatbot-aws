@@ -96,3 +96,15 @@ jobs:
             playbooks/ansible_cd_deploy.yml \
             -e "image_uri=${IMAGE_URI}" \
             -vv
+
+
+
+      - name: Smoke test Ansible 
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ansible
+          ansible-playbook \
+            -i inventory/dev.yml \
+            playbooks/ansible_cd_smoke.yml \
+            -vv
