@@ -4,9 +4,13 @@
 
   vars:
     aws_region_default: "ap-northeast-1"
-    pulumi_workdir_default: "../infra"
     pulumi_stack_default: "dev"
 
+    # Always derive repo root + infra path from this playbook location.
+    # playbook_dir: .../ansible/playbooks
+    # repo_root:    .../ (two levels up)
+    repo_root: "{{ playbook_dir }}/../.."
+    pulumi_workdir_abs: "{{ repo_root }}/infra"
 
   pre_tasks:
     - name: "ANSIBLE | Assert image_uri provided"
@@ -15,16 +19,6 @@
           - image_uri is defined
           - image_uri | length > 0
         fail_msg: "Please pass -e image_uri=<ECR image URI>"
-
-    - name: "ANSIBLE | Debug loaded vars (bedrock_model_id)"
-      ansible.builtin.debug:
-        msg:
-          - "inventory_hostname={{ inventory_hostname }}"
-          - "group_names={{ group_names }}"
-          - "bedrock_model_id={{ bedrock_model_id | default('') }}"
-          - "pulumi_stack={{ pulumi_stack | default(pulumi_stack_default) }}"
-          - "pulumi_workdir={{ pulumi_workdir | default(pulumi_workdir_default) }}"
-          - "aws_region={{ aws_region | default(aws_region_default) }}"
 
     - name: "ANSIBLE | Assert bedrock_model_id provided"
       ansible.builtin.assert:
@@ -37,18 +31,18 @@
       ansible.builtin.command: >-
         pulumi stack select {{ pulumi_stack | default(pulumi_stack_default) }}
       args:
-        chdir: "{{ pulumi_workdir | default(pulumi_workdir_default) }}"
+        chdir: "{{ pulumi_workdir_abs }}"
 
     - name: "ANSIBLE | Read Pulumi output ecs_cluster_name"
       ansible.builtin.command: pulumi stack output ecs_cluster_name
       args:
-        chdir: "{{ pulumi_workdir | default(pulumi_workdir_default) }}"
+        chdir: "{{ pulumi_workdir_abs }}"
       register: out_cluster
 
     - name: "ANSIBLE | Read Pulumi output ecs_service_name"
       ansible.builtin.command: pulumi stack output ecs_service_name
       args:
-        chdir: "{{ pulumi_workdir | default(pulumi_workdir_default) }}"
+        chdir: "{{ pulumi_workdir_abs }}"
       register: out_service
 
     - name: "ANSIBLE | Set facts"
@@ -57,9 +51,13 @@
         ecs_service: "{{ out_service.stdout | trim }}"
         aws_region_eff: "{{ aws_region | default(aws_region_default) }}"
 
-    - name: "ANSIBLE | Show target"
+    - name: "ANSIBLE | Debug context"
       ansible.builtin.debug:
         msg:
+          - "inventory_hostname={{ inventory_hostname }}"
+          - "group_names={{ group_names }}"
+          - "pulumi_stack={{ pulumi_stack | default(pulumi_stack_default) }}"
+          - "pulumi_workdir_abs={{ pulumi_workdir_abs }}"
           - "ecs_cluster={{ ecs_cluster }}"
           - "ecs_service={{ ecs_service }}"
           - "container_name={{ container_name }}"
@@ -106,9 +104,16 @@
         with td_path.open("r", encoding="utf-8") as f:
           td = json.load(f)
 
+        # Remove fields not allowed in register-task-definition input
         for k in [
-          "taskDefinitionArn","revision","status","requiresAttributes",
-          "compatibilities","registeredAt","registeredBy","deregisteredAt",
+          "taskDefinitionArn",
+          "revision",
+          "status",
+          "requiresAttributes",
+          "compatibilities",
+          "registeredAt",
+          "registeredBy",
+          "deregisteredAt",
         ]:
           td.pop(k, None)
 
@@ -116,6 +121,7 @@
         for c in td.get("containerDefinitions", []):
           if c.get("name") == container_name:
             c["image"] = image_uri
+
             env = c.get("environment") or []
             for item in env:
               if item.get("name") == "BEDROCK_MODEL_ID":
@@ -123,6 +129,7 @@
                 break
             else:
               env.append({"name": "BEDROCK_MODEL_ID", "value": bedrock_model_id})
+
             c["environment"] = env
             updated = True
             break
