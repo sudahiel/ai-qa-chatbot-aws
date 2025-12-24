@@ -19,6 +19,7 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,17 +31,6 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::472655909477:role/ai-qa-chatbot-ci-deploy-dev
           aws-region: ${{ env.AWS_REGION }}
-
-      - name: Install Pulumi CLI
-        uses: pulumi/actions@v5
-
-      - name: Pulumi login
-        shell: bash
-        env:
-          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          pulumi login
 
       - name: Login to Amazon ECR
         id: ecr
@@ -54,9 +44,11 @@ jobs:
           COMMIT_SHA="$(git rev-parse HEAD)"
           SHORT_SHA="${COMMIT_SHA::7}"
           IMAGE_URI_SHA="${REGISTRY}/${ECR_REPO}:gitsha-${SHORT_SHA}"
+
           docker build -t "${IMAGE_URI_SHA}" ./app/backend
           docker push "${IMAGE_URI_SHA}"
-          echo "IMAGE_URI=${IMAGE_URI_SHA}" >> $GITHUB_ENV
+
+          echo "IMAGE_URI=${IMAGE_URI_SHA}" >> "$GITHUB_ENV"
           echo "[INFO] IMAGE_URI=${IMAGE_URI_SHA}"
 
       - name: Install Ansible
@@ -64,24 +56,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install ansible
 
-
-      - name: Debug ansible files (runner)
+      # ✅ 唯一保留的 Debug：看「Ansible實際吃到的變數」
+      - name: Debug ansible effective vars
         shell: bash
         run: |
           set -euo pipefail
-          echo "PWD=$(pwd)"
-          echo "=== inventory/dev.yml ==="
-          cat ansible/inventory/dev.yml
-          echo "=== group_vars/dev.yml ==="
-          cat ansible/group_vars/dev.yml
-          echo "=== group_vars listing ==="
-          ls -la ansible/group_vars
+          ansible-inventory -i ansible/inventory/dev.yml --host localhost --yaml | sed -n '1,200p'
 
-
+      # ✅ 正式 Deploy（固定這樣，不要再改）
       - name: Deploy via Ansible (CD)
         shell: bash
         run: |
           set -euo pipefail
           cd ansible
-          ansible-playbook -i inventory/dev.yml playbooks/ansible_cd_deploy.yml -e "image_uri=${IMAGE_URI}"
-
+          ansible-playbook \
+            -i inventory/dev.yml \
+            playbooks/ansible_cd_deploy.yml \
+            -e "image_uri=${IMAGE_URI}" \
+            -vv
