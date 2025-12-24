@@ -89,14 +89,15 @@
 
 ### 查詢指令（建議在 repo 根目錄執行）
 
-bash
+```bash
+
 cd infra
 
 pulumi stack output ecs_cluster_name
 pulumi stack output ecs_service_name
 pulumi stack output alb_dns_name
-pulumi stack output cloudfront_domain_name ```
-
+pulumi stack output cloudfront_domain_name 
+```
 
 ## Phase 2 – Backend on AWS（已完成）
 
