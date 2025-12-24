@@ -17,3 +17,13 @@ Thumbs.db
 *.stack.yaml
 Pulumi.*.json
 infra/urns.txt
+
+# local debug artifacts
+body*.json
+messages*.json
+taskdef*.json
+newtaskdef*.json
+inference-profiles*.json
+bedrock-*.json
+test_bedrock*.py
+

@@ -1,8 +1,8 @@
 # AI Q&A Chatbot on AWS（工程導向練習專案，Work In Progress）
 
-本專案為一個 **工程導向（Engineering-focused）** 的練習專案，目標是透過  
-Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一個  
-**可部署、可更新、可完整銷毀（full lifecycle）** 的 AI 問答系統。
+本專案為一個 **工程導向（Engineering-focused）** 的練習專案，  
+目標是透過 Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，  
+逐步建構一個 **可部署、可更新、可完整銷毀（full lifecycle）** 的 AI 問答系統。
 
 本專案刻意以「真實工程流程」推進，而非一次性完成所有功能。
 
@@ -49,15 +49,22 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
 
 ### 已完成（Implemented）
 
-- 使用者 / Browser  
-  → CloudFront（HTTPS）
-  - `/` → S3 靜態前端網站（Private Bucket + OAC）
-  - `/api/*` → Application Load Balancer  
-    → ECS Fargate（FastAPI）
+使用者 / Browser  
+→ CloudFront（HTTPS）
+
+- `/`  
+  → S3 靜態前端網站（Private Bucket + Origin Access Control）
+
+- `/api/*`  
+  → Application Load Balancer  
+  → ECS Fargate（FastAPI）  
+  → Amazon Bedrock（Nova model via inference profile）
+
+其他元件：
+
 - Container image 儲存在 Amazon ECR
-- 後端服務整合 Amazon Bedrock（AI Q&A）
 - 應用程式日誌輸出至 CloudWatch Logs
-- 系統關鍵元件具備基礎監控與告警（Phase 7）
+- 關鍵服務具備基礎監控與告警（Phase 7）
 
 ---
 
@@ -100,8 +107,9 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
 ## Phase 3 – CI/CD Automation on ECS（已完成）
 
 - GitHub Actions 自動 build / push image 至 ECR
-- 自動更新 ECS task definition 與 service
-- Rolling update 後服務不中斷
+- 自動註冊 ECS task definition 並更新 service
+- Rolling update 過程中服務不中斷
+- CI 與 Runtime IAM 身分分離
 
 ---
 
@@ -117,45 +125,49 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
 ## Phase 5 – Amazon Bedrock（AI Q&A）（已完成）
 
 - POST `/api/chat`
-- 特定問題（What time is it?）回傳 deterministic 結果
-- 其他問題轉交 Amazon Bedrock（目前使用 Titan Text 系列模型）
+- deterministic path：
+  - 特定問題（例如時間查詢）由後端直接處理
+- AI inference path：
+  - 透過 Amazon Bedrock 呼叫 Nova model
+  - 使用 inference profile（非 on-demand model ID）
+- Bedrock 呼叫權限僅存在於 ECS Task Role
 
 ---
 
 ## Phase 6 – Ansible Automation（已完成）
 
-本專案導入 **Ansible 作為自動化驗證工具**，而非用於主機設定或 SSH 管理，  
-而是專注於 **部署後（post-deploy）的產品入口驗證（smoke test）**。
+本專案導入 **Ansible 作為自動化驗證工具**，  
+用途為部署完成後的 **黑箱驗證（post-deploy smoke test）**，  
+而非主機設定或 SSH 管理。
 
 ### 設計重點
 
-- Ansible 以 black-box 方式驗證系統
-- 不需登入 AWS、不需 SSH、不需額外 IAM 權限
-- 驗證對象為實際對外服務的 CloudFront 入口
-- 以 ephemeral container 執行，避免污染本機環境
+- 不需登入 AWS
+- 不需 SSH
+- 不需額外 IAM 權限
+- 驗證對象為實際對外服務（CloudFront）
+- 以 ephemeral runner 執行，避免污染本機環境
 
 ### Smoke Test 驗證項目
 
 - CloudFront `/`
 - CloudFront `/api/health`
 - `/api/chat` deterministic path
-- `/api/chat` Bedrock path
+- `/api/chat` Bedrock inference path
 
 ---
 
 ## Phase 6.5 – Post-deploy Smoke Test（CI 自動化）（已完成）
 
-- Deploy workflow 成功後自動觸發 Ansible Smoke Test
-- 由 GitHub Actions runner 執行
-- 對 CloudFront 對外入口進行端到端驗證
-- Smoke Test 失敗即視為 deploy 失敗（Release Gate）
+- Deploy workflow 成功後自動觸發
+- 由 GitHub Actions runner 執行 Ansible
+- Smoke test 失敗即視為 deploy 失敗（Release Gate）
 
 ---
 
 ## Phase 7 – Observability（已完成）
 
-本階段導入 **最小可交付（Minimum Viable Observability）**，  
-針對既有後端服務建立關鍵 CloudWatch 指標告警。
+本階段導入 **最小可交付（Minimum Viable Observability）**。
 
 ### 已實作告警（CloudWatch Alarms）
 
@@ -164,53 +176,139 @@ Infrastructure as Code（Pulumi）與 AWS 雲端原生服務，逐步建構一�
 - ECS CPU High（>= 80%, 3 minutes）
 - ECS Memory High（>= 80%, 3 minutes）
 
-所有告警皆由 Pulumi 管理，隨 stack 生命週期建立 / 更新 / 銷毀。
+所有告警皆由 Pulumi 管理，  
+並隨 stack 生命週期建立 / 更新 / 銷毀。
 
 ---
 
 ## Phase 8 – IAM Least Privilege（已完成）
 
-### 背景與設計取捨
+本階段針對專案中所有存取 AWS 的行為進行角色拆分與權限收斂，  
+確保 **人類操作、CI/CD、自動化執行期與觀測用途** 各自使用獨立身分，  
+並符合 least privilege 與 full lifecycle management 的設計目標。
 
-在專案初期，為了加速系統建置與驗證流程，  
-CI 與基礎設施操作曾使用較寬鬆的 IAM 權限（例如直接使用 IAM User access key）。
+---
 
-當系統架構與部署流程穩定後，本階段針對 IAM 權限進行 **工程化收斂**，  
-以符合實務上的 least-privilege 原則。
+### 設計原則
 
-### 實作內容
+- 基礎設施、部署流程、執行期與觀測用途使用不同 IAM 身分
+- 人類帳號不參與 runtime 或 CI/CD
+- CI 不使用長期 access key（改用 OIDC）
+- Runtime 僅具備最小必要 API 權限
+- 系統在最小權限設計下仍可完成 deploy / update / destroy
 
-本階段完成以下拆分與調整：
+---
 
-- **Infra 身分（人 / CLI / Pulumi）**
-  - 僅用於基礎設施建置與管理
-  - 與 CI / Runtime 身分分離
+### IAM 身分與職責分工
 
-- **CI 身分（GitHub Actions）**
-  - 改用 GitHub Actions OIDC 機制
-  - 以 Assume Role 方式取得臨時憑證
-  - 權限僅包含：
-    - ECR image push
-    - ECS task definition 註冊與 service 更新
-    - 限定範圍的 `iam:PassRole`
+#### Infra Admin（Pulumi Operator）
 
-- **Runtime 身分（ECS Task Role / Execution Role）**
-  - Task Role 僅允許呼叫 Amazon Bedrock
-  - Execution Role 僅負責 image pull、log 與 ECS Exec
+- 實體身分：`ai-qa-chatbot-infra-admin`（IAM User）
+- 用途：
+  - `pulumi preview`
+  - `pulumi up`
+  - `pulumi destroy`
+- 權限：
+  - `AdministratorAccess`（demo / 練習環境）
+- 說明：
+  - 專責基礎設施生命週期管理
+  - 不參與 CI/CD 或應用程式 runtime
+  - root 僅用於帳號治理，不作為日常操作身分
 
-### 成果
+---
 
+#### CI/CD Deploy Role（GitHub Actions）
+
+- 身分型態：IAM Role（OIDC Assume Role）
+- 用途：
+  - 自動化 build / deploy
+- 權限範圍（最小可用）：
+  - ECR image push（repository scoped）
+  - ECS RegisterTaskDefinition
+  - ECS UpdateService
+  - 限定範圍的 `iam:PassRole`
+- 不具備：
+  - 基礎設施建立 / 刪除權限
+  - Amazon Bedrock API 呼叫權限
+
+---
+
+#### Runtime Role（ECS Task Role）
+
+- 身分型態：IAM Role（ECS Task Role）
+- 用途：
+  - ECS Fargate 任務執行期間呼叫 Amazon Bedrock
+- 僅允許：
+  - `bedrock:InvokeModel`
+- Resource 限制為：
+  - 指定 Nova inference profile ARN
+  - 該 profile 可能路由到的同一模型版本 foundation-model ARNs
+- 不具備：
+  - IAM write 權限
+  - ECS / EC2 / SSM 管理能力
+
+---
+
+#### Observer（Read-only Identity）
+
+- 實體身分：`ai-qa-chatbot-observer`（IAM User）
+- 權限：
+  - AWS managed policy：`ReadOnlyAccess`
+- 用途：
+  - 系統運行期間的觀測與驗證
+- 可執行：
+  - 檢視 ECS Service / Task 狀態
+  - 檢視 ALB Target Group 健康狀態
+  - 檢視 CloudWatch Logs / Metrics / Alarms
+  - 透過 CloudFront 公開 API 執行 smoke / functional 驗證
+- 不具備：
+  - deploy / update / destroy 能力
+  - ECR / ECS / IAM write 權限
+
+---
+
+#### Legacy / Bootstrap Identity
+
+- 身分：`ai-qa-chatbot-cli`
+- 說明：
+  - 專案初期用於快速驗證的高權限帳號
+  - 已被 Infra Admin / CI / Runtime / Observer 角色取代
+  - 視為 legacy identity，不再用於日常操作
+
+---
+
+### 驗證結果與成果
+
+- Infra Admin 身分已實際用於 Pulumi 操作並完成驗證
+- CI / Runtime / Observer 角色皆在最小權限下正常運作
 - CI 不再使用長期 access key
-- CI / Infra / Runtime 身分與權限責任明確分離
-- 系統仍維持完整 deploy / update / destroy 能力
+- Observer 可觀測但不可修改系統狀態
+- 系統仍可完成完整生命週期：
+  - deploy / update（CI/CD）
+  - destroy（Infra Admin）
 
 ---
 
 ## Infrastructure Lifecycle（IaC）
 
-- `pulumi preview`
-- `pulumi up`
-- `pulumi destroy`
+- `pulumi preview`：檢視變更影響
+- `pulumi up`：建立或更新資源
+- `pulumi destroy`：完整銷毀所有資源
+
+---
+
+## Repository Hygiene（已完成 / 進行中）
+
+### 已完成
+
+- 移除臨時 debug 檔案
+- 不提交任何憑證或本機設定
+
+### 進行中
+
+- 補齊 `.gitignore`
+- 確認 `git clean -xfd` 可安全執行
+- 確保 repo 可被第三方 clone 並重現
 
 ---
 
@@ -219,9 +317,10 @@ CI 與基礎設施操作曾使用較寬鬆的 IAM 權限（例如直接使用 IA
 - [x] Backend on ECS + ALB
 - [x] CI/CD automation
 - [x] CloudFront + S3 frontend
-- [x] Amazon Bedrock integration
+- [x] Amazon Bedrock integration（Nova）
 - [x] Ansible-based smoke test
-- [x] Observability (CloudWatch alarms)
+- [x] Observability（CloudWatch alarms）
 - [x] IAM least-privilege hardening
 - [ ] Bedrock model configuration refinement
-- [ ] Production environment (prod stack)
+- [ ] Multi-environment（prod stack）
+- [ ] README 圖表與架構圖補齊
