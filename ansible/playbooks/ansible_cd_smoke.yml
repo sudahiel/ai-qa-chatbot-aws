@@ -19,7 +19,7 @@
     # -----------------------------
     # Frontend check (optional but nice)
     # -----------------------------
-    - name: "ANSIBLE | Check frontend (GET /)"
+    - name: "ANSIBLE | Check frontend (GET /) (best-effort)"
       ansible.builtin.uri:
         url: "{{ base_url }}{{ frontend_path }}"
         method: GET
@@ -27,6 +27,17 @@
         status_code: [200, 304]
         timeout: "{{ timeout_seconds }}"
       register: r_frontend
+      retries: 5
+      delay: 2
+      until: r_frontend.status is defined and (r_frontend.status in [200, 304])
+      failed_when: false
+
+    - name: "ANSIBLE | Frontend check result"
+      ansible.builtin.debug:
+        msg:
+          - "frontend_status={{ r_frontend.status | default('dns_fail_or_timeout') }}"
+          - "frontend_url={{ base_url }}{{ frontend_path }}"
+
 
     # -----------------------------
     # Health check
@@ -39,6 +50,10 @@
         status_code: 200
         timeout: "{{ timeout_seconds }}"
       register: r_health
+      retries: 10
+      delay: 3
+      until: r_health.status is defined and r_health.status == 200
+
 
     - name: "ANSIBLE | Debug health response"
       ansible.builtin.debug:
