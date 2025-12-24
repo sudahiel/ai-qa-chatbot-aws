@@ -24,6 +24,12 @@
           - "group_names={{ group_names }}"
           - "bedrock_model_id={{ bedrock_model_id | default('') }}"
           
+    - name: "ANSIBLE | Debug hostvars bedrock_model_id"
+      ansible.builtin.debug:
+        msg:
+          - "hostvars_bedrock={{ hostvars[inventory_hostname].get('bedrock_model_id', '<<MISSING>>') }}"
+          - "bedrock_keys={{ hostvars[inventory_hostname] | dict2items | selectattr('key','search','bedrock') | list }}"
+
 
     - name: "ANSIBLE | Assert bedrock_model_id provided"
       ansible.builtin.assert:

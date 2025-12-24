@@ -64,6 +64,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install ansible
 
+
+      - name: Debug ansible files (runner)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "PWD=$(pwd)"
+          echo "=== inventory/dev.yml ==="
+          cat ansible/inventory/dev.yml
+          echo "=== group_vars/dev.yml ==="
+          cat ansible/group_vars/dev.yml
+          echo "=== group_vars listing ==="
+          ls -la ansible/group_vars
+
+
       - name: Deploy via Ansible (CD)
         shell: bash
         run: |

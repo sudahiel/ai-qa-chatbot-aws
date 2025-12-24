@@ -1,5 +1,5 @@
 ﻿- name: "Ansible | CD | Smoke Test"
-  hosts: localhost
+  hosts: dev
   gather_facts: false
 
   tasks:
