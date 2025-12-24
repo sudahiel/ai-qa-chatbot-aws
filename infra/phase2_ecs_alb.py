@@ -183,26 +183,44 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
         policy_arn="arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
     )
 
-    # Bedrock model invoke
-    bedrock_model_arn = pulumi.Output.concat(
-        "arn:aws:bedrock:", aws.config.region, "::foundation-model/amazon.titan-text-express-v1"
-    )
+    # Bedrock invoke (Nova micro via inference profile)
+    bedrock_inference_profile_arn = "arn:aws:bedrock:ap-northeast-1:472655909477:inference-profile/apac.amazon.nova-micro-v1:0"
+    bedrock_foundation_model_arn = "arn:aws:bedrock:*::foundation-model/amazon.nova-micro-v1:0"
 
     bedrock_invoke_managed_policy = aws.iam.Policy(
         "bedrockInvokeManagedPolicy",
-        policy=bedrock_model_arn.apply(lambda arn: json.dumps({
+        policy=json.dumps({
             "Version": "2012-10-17",
-            "Statement": [{
-                "Sid": "InvokeSpecificBedrockModel",
-                "Effect": "Allow",
-                "Action": [
-                    "bedrock:InvokeModel",
-                    "bedrock:InvokeModelWithResponseStream"
-                ],
-                "Resource": arn
-            }]
-        })),
+            "Statement": [
+                {
+                    "Sid": "InvokeViaInferenceProfile",
+                    "Effect": "Allow",
+                    "Action": [
+                        "bedrock:InvokeModel",
+                        "bedrock:InvokeModelWithResponseStream",
+                        "bedrock:Converse",
+                        "bedrock:ConverseStream",
+                    ],
+                    "Resource": bedrock_inference_profile_arn
+                },
+                {
+                    "Sid": "InvokeUnderlyingNovaFoundationModelCrossRegion",
+                    "Effect": "Allow",
+                    "Action": [
+                        "bedrock:InvokeModel",
+                        "bedrock:InvokeModelWithResponseStream",
+                        "bedrock:Converse",
+                        "bedrock:ConverseStream",
+                    ],
+                    "Resource": bedrock_foundation_model_arn
+                }
+            ]
+        }),
+        tags={"Project": project, "Stack": stack},
     )
+
+
+
 
     aws.iam.RolePolicyAttachment(
         "taskRoleBedrockInvokeAttach",

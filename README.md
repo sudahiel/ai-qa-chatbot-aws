@@ -52,13 +52,13 @@
 使用者 / Browser  
 → CloudFront（HTTPS）
 
-- `/`  
-  → S3 靜態前端網站（Private Bucket + Origin Access Control）
+- `/`
+  - → S3 靜態前端網站（Private Bucket + Origin Access Control）
 
-- `/api/*`  
-  → Application Load Balancer  
-  → ECS Fargate（FastAPI）  
-  → Amazon Bedrock（Nova model via inference profile）
+- `/api/*`
+  - → Application Load Balancer
+  - → ECS Fargate（FastAPI）
+  - → Amazon Bedrock（Nova model via inference profile）
 
 其他元件：
 
@@ -86,7 +86,9 @@
 - ALB DNS：會隨 stack recreate 變動
 - CloudFront Domain：會隨 stack recreate 變動
 
-查詢指令（建議在 repo 根目錄執行）
+### 查詢指令（建議在 repo 根目錄執行）
+
+```bash
 cd infra
 
 # ECS
@@ -97,13 +99,13 @@ pulumi stack output ecs_service_name
 pulumi stack output alb_dns_name
 pulumi stack output cloudfront_domain_name
 
----
+
 
 ## Phase 2 – Backend on AWS（已完成）
 
 ### 架構摘要
 
-- 使用 Pulumi 建立 ECS Fargate + ALB
+- 使用 Pulumi 建立 ECS Fargate + Application Load Balancer
 - FastAPI（uvicorn）作為後端 API
 - ALB 透過 Target Group（IP mode）將流量導向 ECS Task
 
@@ -147,8 +149,8 @@ pulumi stack output cloudfront_domain_name
 
 ## Phase 6 – Ansible Automation（已完成）
 
-本專案導入 **Ansible 作為自動化驗證工具**，  
-用途為部署完成後的 **黑箱驗證（post-deploy smoke test）**，  
+本專案導入 Ansible 作為自動化驗證工具，  
+用途為部署完成後的黑箱驗證（post-deploy smoke test），  
 而非主機設定或 SSH 管理。
 
 ### 設計重點
@@ -198,8 +200,6 @@ pulumi stack output cloudfront_domain_name
 確保 **人類操作、CI/CD、自動化執行期與觀測用途** 各自使用獨立身分，  
 並符合 least privilege 與 full lifecycle management 的設計目標。
 
----
-
 ### 設計原則
 
 - 基礎設施、部署流程、執行期與觀測用途使用不同 IAM 身分
@@ -207,8 +207,6 @@ pulumi stack output cloudfront_domain_name
 - CI 不使用長期 access key（改用 OIDC）
 - Runtime 僅具備最小必要 API 權限
 - 系統在最小權限設計下仍可完成 deploy / update / destroy
-
----
 
 ### IAM 身分與職責分工
 
@@ -226,8 +224,6 @@ pulumi stack output cloudfront_domain_name
   - 不參與 CI/CD 或應用程式 runtime
   - root 僅用於帳號治理，不作為日常操作身分
 
----
-
 #### CI/CD Deploy Role（GitHub Actions）
 
 - 身分型態：IAM Role（OIDC Assume Role）
@@ -241,8 +237,6 @@ pulumi stack output cloudfront_domain_name
 - 不具備：
   - 基礎設施建立 / 刪除權限
   - Amazon Bedrock API 呼叫權限
-
----
 
 #### Runtime Role（ECS Task Role）
 
@@ -258,8 +252,6 @@ pulumi stack output cloudfront_domain_name
   - IAM write 權限
   - ECS / EC2 / SSM 管理能力
 
----
-
 #### Observer（Read-only Identity）
 
 - 實體身分：`ai-qa-chatbot-observer`（IAM User）
@@ -267,16 +259,9 @@ pulumi stack output cloudfront_domain_name
   - AWS managed policy：`ReadOnlyAccess`
 - 用途：
   - 系統運行期間的觀測與驗證
-- 可執行：
-  - 檢視 ECS Service / Task 狀態
-  - 檢視 ALB Target Group 健康狀態
-  - 檢視 CloudWatch Logs / Metrics / Alarms
-  - 透過 CloudFront 公開 API 執行 smoke / functional 驗證
 - 不具備：
   - deploy / update / destroy 能力
   - ECR / ECS / IAM write 權限
-
----
 
 #### Legacy / Bootstrap Identity
 
@@ -285,8 +270,6 @@ pulumi stack output cloudfront_domain_name
   - 專案初期用於快速驗證的高權限帳號
   - 已被 Infra Admin / CI / Runtime / Observer 角色取代
   - 視為 legacy identity，不再用於日常操作
-
----
 
 ### 驗證結果與成果
 
