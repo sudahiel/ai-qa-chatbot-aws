@@ -8,7 +8,6 @@
     pulumi_workdir: "{{ pulumi_workdir | default('infra') }}"
     pulumi_stack: "{{ pulumi_stack | default('dev') }}"
     container_name: "{{ container_name | default('backend') }}"
-    bedrock_model_id: "{{ bedrock_model_id | default('') }}"
 
   pre_tasks:
     - name: "ANSIBLE | Assert image_uri provided"
@@ -22,8 +21,8 @@
       ansible.builtin.assert:
         that:
           - bedrock_model_id is defined
-          - bedrock_model_id | length > 0
-        fail_msg: "bedrock_model_id is empty (set group_vars/dev.yml or pass -e bedrock_model_id=...)"
+          - (bedrock_model_id | string | length) > 0
+        fail_msg: "bedrock_model_id is empty (set ansible/group_vars/dev.yml or pass -e bedrock_model_id=...)"
 
     - name: "ANSIBLE | Select Pulumi stack"
       ansible.builtin.command: pulumi stack select {{ pulumi_stack }}
