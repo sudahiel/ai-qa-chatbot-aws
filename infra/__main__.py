@@ -28,6 +28,7 @@ app_repo = aws.ecr.Repository(
     "appRepo",
     name=repo_name,
     image_scanning_configuration=aws.ecr.RepositoryImageScanningConfigurationArgs(scan_on_push=True),
+    force_delete=True, 
     tags=common_tags,
 )
 
