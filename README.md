@@ -81,10 +81,21 @@
 - S3 Bucket（assets）：ai-qa-chatbot-infra-dev-assets
 - S3 Bucket（frontend）：ai-qa-chatbot-infra-dev-frontend
 - ECR Repository：ai-qa-chatbot-infra-dev
-- ECS Cluster：appCluster-5208a55
-- ECS Service：backendService-2039b22
-- ALB DNS：由 Pulumi 輸出取得
-- CloudFront Domain：由 Pulumi 輸出取得
+- ECS Cluster：會隨 stack recreate 變動
+- ECS Service：會隨 stack recreate 變動
+- ALB DNS：會隨 stack recreate 變動
+- CloudFront Domain：會隨 stack recreate 變動
+
+查詢指令（建議在 repo 根目錄執行）
+cd infra
+
+# ECS
+pulumi stack output ecs_cluster_name
+pulumi stack output ecs_service_name
+
+# Entry points
+pulumi stack output alb_dns_name
+pulumi stack output cloudfront_domain_name
 
 ---
 
