@@ -52,11 +52,15 @@ jobs:
           set -euo pipefail
           pulumi stack select dev
 
-          echo "ECS_CLUSTER=$(pulumi stack output ecs_cluster_name)" >> $GITHUB_ENV
-          echo "ECS_SERVICE=$(pulumi stack output ecs_service_name)" >> $GITHUB_ENV
+          ECS_CLUSTER_NAME="$(pulumi stack output ecs_cluster_name)"
+          ECS_SERVICE_NAME="$(pulumi stack output ecs_service_name)"
 
-          echo "[INFO] ECS_CLUSTER=$ECS_CLUSTER"
-          echo "[INFO] ECS_SERVICE=$ECS_SERVICE"
+          echo "ECS_CLUSTER=$ECS_CLUSTER_NAME" >> "$GITHUB_ENV"
+          echo "ECS_SERVICE=$ECS_SERVICE_NAME" >> "$GITHUB_ENV"
+
+          echo "[INFO] ECS_CLUSTER=$ECS_CLUSTER_NAME"
+          echo "[INFO] ECS_SERVICE=$ECS_SERVICE_NAME"
+
 
 
       - name: Login to Amazon ECR
