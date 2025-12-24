@@ -3,11 +3,9 @@
   gather_facts: false
 
   vars:
-    # 這些會從 group_vars/dev.yml 來（我們前面新增的）
-    aws_region: "{{ aws_region | default('ap-northeast-1') }}"
-    pulumi_workdir: "{{ pulumi_workdir | default('infra') }}"
-    pulumi_stack: "{{ pulumi_stack | default('dev') }}"
-    container_name: "{{ container_name | default('backend') }}"
+    aws_region_default: "ap-northeast-1"
+    pulumi_workdir_default: "infra"
+    pulumi_stack_default: "dev"
 
   pre_tasks:
     - name: "ANSIBLE | Assert image_uri provided"
@@ -23,42 +21,40 @@
           - "inventory_hostname={{ inventory_hostname }}"
           - "group_names={{ group_names }}"
           - "bedrock_model_id={{ bedrock_model_id | default('') }}"
-          
-    - name: "ANSIBLE | Debug hostvars bedrock_model_id"
-      ansible.builtin.debug:
-        msg:
-          - "hostvars_bedrock={{ hostvars[inventory_hostname].get('bedrock_model_id', '<<MISSING>>') }}"
-          - "bedrock_keys={{ hostvars[inventory_hostname] | dict2items | selectattr('key','search','bedrock') | list }}"
-
+          - "pulumi_stack={{ pulumi_stack | default(pulumi_stack_default) }}"
+          - "pulumi_workdir={{ pulumi_workdir | default(pulumi_workdir_default) }}"
+          - "aws_region={{ aws_region | default(aws_region_default) }}"
 
     - name: "ANSIBLE | Assert bedrock_model_id provided"
       ansible.builtin.assert:
         that:
           - bedrock_model_id is defined
           - (bedrock_model_id | string | length) > 0
-        fail_msg: "bedrock_model_id is empty (set ansible/group_vars/dev.yml or pass -e bedrock_model_id=...)"
+        fail_msg: "bedrock_model_id is empty (set ansible/inventory/group_vars/dev.yml or pass -e bedrock_model_id=...)"
 
     - name: "ANSIBLE | Select Pulumi stack"
-      ansible.builtin.command: pulumi stack select {{ pulumi_stack }}
+      ansible.builtin.command: >-
+        pulumi stack select {{ pulumi_stack | default(pulumi_stack_default) }}
       args:
-        chdir: "{{ pulumi_workdir }}"
+        chdir: "{{ pulumi_workdir | default(pulumi_workdir_default) }}"
 
     - name: "ANSIBLE | Read Pulumi output ecs_cluster_name"
       ansible.builtin.command: pulumi stack output ecs_cluster_name
       args:
-        chdir: "{{ pulumi_workdir }}"
+        chdir: "{{ pulumi_workdir | default(pulumi_workdir_default) }}"
       register: out_cluster
 
     - name: "ANSIBLE | Read Pulumi output ecs_service_name"
       ansible.builtin.command: pulumi stack output ecs_service_name
       args:
-        chdir: "{{ pulumi_workdir }}"
+        chdir: "{{ pulumi_workdir | default(pulumi_workdir_default) }}"
       register: out_service
 
     - name: "ANSIBLE | Set facts"
       ansible.builtin.set_fact:
         ecs_cluster: "{{ out_cluster.stdout | trim }}"
         ecs_service: "{{ out_service.stdout | trim }}"
+        aws_region_eff: "{{ aws_region | default(aws_region_default) }}"
 
     - name: "ANSIBLE | Show target"
       ansible.builtin.debug:
@@ -68,12 +64,13 @@
           - "container_name={{ container_name }}"
           - "image_uri={{ image_uri }}"
           - "bedrock_model_id={{ bedrock_model_id }}"
+          - "aws_region={{ aws_region_eff }}"
 
   tasks:
     - name: "ANSIBLE | Get current task definition ARN"
       ansible.builtin.command: >
         aws ecs describe-services
-        --region {{ aws_region }}
+        --region {{ aws_region_eff }}
         --cluster {{ ecs_cluster }}
         --services {{ ecs_service }}
         --query "services[0].taskDefinition"
@@ -83,7 +80,7 @@
     - name: "ANSIBLE | Fetch current task definition JSON"
       ansible.builtin.command: >
         aws ecs describe-task-definition
-        --region {{ aws_region }}
+        --region {{ aws_region_eff }}
         --task-definition {{ td_arn.stdout | trim }}
         --query "taskDefinition"
         --output json
@@ -108,16 +105,9 @@
         with td_path.open("r", encoding="utf-8") as f:
           td = json.load(f)
 
-        # Remove fields not allowed in register-task-definition input
         for k in [
-          "taskDefinitionArn",
-          "revision",
-          "status",
-          "requiresAttributes",
-          "compatibilities",
-          "registeredAt",
-          "registeredBy",
-          "deregisteredAt",
+          "taskDefinitionArn","revision","status","requiresAttributes",
+          "compatibilities","registeredAt","registeredBy","deregisteredAt",
         ]:
           td.pop(k, None)
 
@@ -125,7 +115,6 @@
         for c in td.get("containerDefinitions", []):
           if c.get("name") == container_name:
             c["image"] = image_uri
-
             env = c.get("environment") or []
             for item in env:
               if item.get("name") == "BEDROCK_MODEL_ID":
@@ -133,7 +122,6 @@
                 break
             else:
               env.append({"name": "BEDROCK_MODEL_ID", "value": bedrock_model_id})
-
             c["environment"] = env
             updated = True
             break
@@ -154,11 +142,10 @@
         IMAGE_URI: "{{ image_uri }}"
         BEDROCK_MODEL_ID: "{{ bedrock_model_id }}"
 
-
     - name: "ANSIBLE | Register new task definition"
       ansible.builtin.command: >
         aws ecs register-task-definition
-        --region {{ aws_region }}
+        --region {{ aws_region_eff }}
         --cli-input-json file://{{ playbook_dir }}/newtaskdef.json
         --query "taskDefinition.taskDefinitionArn"
         --output text
@@ -167,7 +154,7 @@
     - name: "ANSIBLE | Update ECS service to new task definition"
       ansible.builtin.command: >
         aws ecs update-service
-        --region {{ aws_region }}
+        --region {{ aws_region_eff }}
         --cluster {{ ecs_cluster }}
         --service {{ ecs_service }}
         --task-definition {{ new_td_arn.stdout | trim }}
@@ -175,7 +162,7 @@
     - name: "ANSIBLE | Wait for service stability"
       ansible.builtin.command: >
         aws ecs wait services-stable
-        --region {{ aws_region }}
+        --region {{ aws_region_eff }}
         --cluster {{ ecs_cluster }}
         --services {{ ecs_service }}
 
