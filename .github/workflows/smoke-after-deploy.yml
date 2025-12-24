@@ -24,6 +24,22 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install ansible
+      - name: Configure AWS credentials (assume role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::472655909477:role/ai-qa-chatbot-ci-deploy-dev
+          aws-region: ap-northeast-1
+
+      - name: Install Pulumi CLI
+        uses: pulumi/actions@v5
+
+      - name: Pulumi login
+        shell: bash
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          pulumi login
 
       # 等 ECS rolling update / CloudFront propagation
       - name: Wait for rollout
@@ -34,9 +50,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          # Read latest CloudFront domain from Pulumi outputs
+          CF_DOMAIN="$(cd infra && pulumi stack select dev >/dev/null && pulumi stack output cloudfront_domain_name)"
+          BASE_URL="https://${CF_DOMAIN}"
+          echo "[INFO] BASE_URL=${BASE_URL}"
+
           for i in 1 2 3 4 5; do
             echo "== Smoke attempt $i =="
-            if ansible-playbook -i ansible/inventory/localhost.yml ansible/playbooks/smoke.yml; then
+            if ansible-playbook -i ansible/inventory/localhost.yml ansible/playbooks/smoke.yml -e "base_url=${BASE_URL}"; then
               echo "Smoke OK"
               exit 0
             fi
@@ -45,3 +67,4 @@ jobs:
           done
           echo "Smoke still failing after retries."
           exit 1
+
