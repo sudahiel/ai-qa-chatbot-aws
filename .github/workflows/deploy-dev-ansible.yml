@@ -82,6 +82,7 @@ jobs:
         shell: bash
         env:
           ANSIBLE_CONFIG: ansible/ansible.cfg
+          ANSIBLE_STDOUT_CALLBACK: default
         run: |
           set -euo pipefail
           ansible-playbook ansible/playbooks/ansible_cd_deploy.yml -e "image_uri=${IMAGE_URI}"
