@@ -17,7 +17,8 @@ env:
 
   # ✅ Force Bedrock model id at deploy-time (stop "stuck on nova")
   # On-demand & stable:
-  BEDROCK_MODEL_ID: amazon.titan-text-express-v1
+  BEDROCK_MODEL_ID: arn:aws:bedrock:ap-northeast-1:472655909477:inference-profile/apac.amazon.nova-micro-v1:0
+
 
 jobs:
   deploy:
