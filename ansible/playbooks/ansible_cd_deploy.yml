@@ -1,0 +1,170 @@
+﻿- name: "Ansible | CD | Deploy to ECS (taskdef update + wait stable)"
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    # 這些會從 group_vars/dev.yml 來（我們前面新增的）
+    aws_region: "{{ aws_region | default('ap-northeast-1') }}"
+    pulumi_workdir: "{{ pulumi_workdir | default('infra') }}"
+    pulumi_stack: "{{ pulumi_stack | default('dev') }}"
+    container_name: "{{ container_name | default('backend') }}"
+    bedrock_model_id: "{{ bedrock_model_id | default('') }}"
+
+  pre_tasks:
+    - name: "ANSIBLE | Assert image_uri provided"
+      ansible.builtin.assert:
+        that:
+          - image_uri is defined
+          - image_uri | length > 0
+        fail_msg: "Please pass -e image_uri=<ECR image URI>"
+
+    - name: "ANSIBLE | Assert bedrock_model_id provided"
+      ansible.builtin.assert:
+        that:
+          - bedrock_model_id is defined
+          - bedrock_model_id | length > 0
+        fail_msg: "bedrock_model_id is empty (set group_vars/dev.yml or pass -e bedrock_model_id=...)"
+
+    - name: "ANSIBLE | Select Pulumi stack"
+      ansible.builtin.command: pulumi stack select {{ pulumi_stack }}
+      args:
+        chdir: "{{ pulumi_workdir }}"
+
+    - name: "ANSIBLE | Read Pulumi output ecs_cluster_name"
+      ansible.builtin.command: pulumi stack output ecs_cluster_name
+      args:
+        chdir: "{{ pulumi_workdir }}"
+      register: out_cluster
+
+    - name: "ANSIBLE | Read Pulumi output ecs_service_name"
+      ansible.builtin.command: pulumi stack output ecs_service_name
+      args:
+        chdir: "{{ pulumi_workdir }}"
+      register: out_service
+
+    - name: "ANSIBLE | Set facts"
+      ansible.builtin.set_fact:
+        ecs_cluster: "{{ out_cluster.stdout | trim }}"
+        ecs_service: "{{ out_service.stdout | trim }}"
+
+    - name: "ANSIBLE | Show target"
+      ansible.builtin.debug:
+        msg:
+          - "ecs_cluster={{ ecs_cluster }}"
+          - "ecs_service={{ ecs_service }}"
+          - "container_name={{ container_name }}"
+          - "image_uri={{ image_uri }}"
+          - "bedrock_model_id={{ bedrock_model_id }}"
+
+  tasks:
+    - name: "ANSIBLE | Get current task definition ARN"
+      ansible.builtin.command: >
+        aws ecs describe-services
+        --region {{ aws_region }}
+        --cluster {{ ecs_cluster }}
+        --services {{ ecs_service }}
+        --query "services[0].taskDefinition"
+        --output text
+      register: td_arn
+
+    - name: "ANSIBLE | Fetch current task definition JSON"
+      ansible.builtin.command: >
+        aws ecs describe-task-definition
+        --region {{ aws_region }}
+        --task-definition {{ td_arn.stdout | trim }}
+        --query "taskDefinition"
+        --output json
+      register: td_json
+
+    - name: "ANSIBLE | Write taskdef.json"
+      ansible.builtin.copy:
+        dest: "{{ playbook_dir }}/taskdef.json"
+        content: "{{ td_json.stdout }}"
+
+    - name: "ANSIBLE | Render newtaskdef.json (update image + BEDROCK_MODEL_ID)"
+      ansible.builtin.command: python - << 'PY'
+        import json, os, pathlib
+
+        base = pathlib.Path(os.environ["PLAYBOOK_DIR"])
+        container_name = os.environ["CONTAINER_NAME"]
+        image_uri = os.environ["IMAGE_URI"]
+        bedrock_model_id = os.environ["BEDROCK_MODEL_ID"].strip()
+
+        td_path = base / "taskdef.json"
+        with td_path.open("r", encoding="utf-8") as f:
+          td = json.load(f)
+
+        # Remove fields not allowed in register-task-definition input
+        for k in [
+          "taskDefinitionArn",
+          "revision",
+          "status",
+          "requiresAttributes",
+          "compatibilities",
+          "registeredAt",
+          "registeredBy",
+          "deregisteredAt",
+        ]:
+          td.pop(k, None)
+
+        updated = False
+        for c in td.get("containerDefinitions", []):
+          if c.get("name") == container_name:
+            c["image"] = image_uri
+
+            env = c.get("environment") or []
+            for item in env:
+              if item.get("name") == "BEDROCK_MODEL_ID":
+                item["value"] = bedrock_model_id
+                break
+            else:
+              env.append({"name": "BEDROCK_MODEL_ID", "value": bedrock_model_id})
+
+            c["environment"] = env
+            updated = True
+            break
+
+        if not updated:
+          names = [c.get("name") for c in td.get("containerDefinitions", [])]
+          raise SystemExit(f"Container name not found: {container_name}. available={names}")
+
+        new_path = base / "newtaskdef.json"
+        with new_path.open("w", encoding="utf-8") as f:
+          json.dump(td, f)
+
+        print("Rendered:", str(new_path))
+      environment:
+        PLAYBOOK_DIR: "{{ playbook_dir }}"
+        CONTAINER_NAME: "{{ container_name }}"
+        IMAGE_URI: "{{ image_uri }}"
+        BEDROCK_MODEL_ID: "{{ bedrock_model_id }}"
+
+    - name: "ANSIBLE | Register new task definition"
+      ansible.builtin.command: >
+        aws ecs register-task-definition
+        --region {{ aws_region }}
+        --cli-input-json file://{{ playbook_dir }}/newtaskdef.json
+        --query "taskDefinition.taskDefinitionArn"
+        --output text
+      register: new_td_arn
+
+    - name: "ANSIBLE | Update ECS service to new task definition"
+      ansible.builtin.command: >
+        aws ecs update-service
+        --region {{ aws_region }}
+        --cluster {{ ecs_cluster }}
+        --service {{ ecs_service }}
+        --task-definition {{ new_td_arn.stdout | trim }}
+
+    - name: "ANSIBLE | Wait for service stability"
+      ansible.builtin.command: >
+        aws ecs wait services-stable
+        --region {{ aws_region }}
+        --cluster {{ ecs_cluster }}
+        --services {{ ecs_service }}
+
+    - name: "ANSIBLE | Done"
+      ansible.builtin.debug:
+        msg:
+          - "Deployed task definition: {{ new_td_arn.stdout | trim }}"
+          - "Service is stable."

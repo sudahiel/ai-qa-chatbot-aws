@@ -1,0 +1,31 @@
+﻿- name: "Ansible | CD | Smoke Test"
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: "ANSIBLE | Show target URL"
+      ansible.builtin.debug:
+        msg:
+          - "BASE_URL={{ base_url }}"
+          - "health_path={{ health_path }}"
+          - "chat_path={{ chat_path }}"
+          - "timeout={{ timeout_seconds }}s"
+
+    - name: "ANSIBLE | Health check"
+      ansible.builtin.uri:
+        url: "{{ base_url }}{{ health_path }}"
+        method: GET
+        timeout: "{{ timeout_seconds }}"
+        status_code: 200
+
+    - name: "ANSIBLE | Chat API check"
+      ansible.builtin.uri:
+        url: "{{ base_url }}{{ chat_path }}"
+        method: POST
+        headers:
+          Content-Type: application/json
+        body_format: json
+        body:
+          question: "What time is it?"
+        timeout: "{{ timeout_seconds }}"
+        status_code: 200
