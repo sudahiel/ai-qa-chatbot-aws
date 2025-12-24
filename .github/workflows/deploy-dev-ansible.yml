@@ -80,6 +80,8 @@ jobs:
 
       - name: Deploy via Ansible (CD)
         shell: bash
+        env:
+          ANSIBLE_CONFIG: ansible/ansible.cfg
         run: |
           set -euo pipefail
-          ansible-playbook -i ansible/inventory/dev.yml ansible/playbooks/ansible_cd_deploy.yml -e "image_uri=${IMAGE_URI}"
+          ansible-playbook ansible/playbooks/ansible_cd_deploy.yml -e "image_uri=${IMAGE_URI}"
