@@ -91,7 +91,8 @@
         content: "{{ td_json.stdout }}"
 
     - name: "ANSIBLE | Render newtaskdef.json (update image + BEDROCK_MODEL_ID)"
-      ansible.builtin.command: |
+      ansible.builtin.shell: |
+        set -euo pipefail
         python - << 'PY'
         import json, os, pathlib
 
@@ -102,53 +103,52 @@
 
         td_path = base / "taskdef.json"
         with td_path.open("r", encoding="utf-8") as f:
-          td = json.load(f)
+            td = json.load(f)
 
-        # Remove fields not allowed in register-task-definition input
         for k in [
-          "taskDefinitionArn",
-          "revision",
-          "status",
-          "requiresAttributes",
-          "compatibilities",
-          "registeredAt",
-          "registeredBy",
-          "deregisteredAt",
+            "taskDefinitionArn",
+            "revision",
+            "status",
+            "requiresAttributes",
+            "compatibilities",
+            "registeredAt",
+            "registeredBy",
+            "deregisteredAt",
         ]:
-          td.pop(k, None)
+            td.pop(k, None)
 
         updated = False
         for c in td.get("containerDefinitions", []):
-          if c.get("name") == container_name:
-            c["image"] = image_uri
-
-            env = c.get("environment") or []
-            for item in env:
-              if item.get("name") == "BEDROCK_MODEL_ID":
-                item["value"] = bedrock_model_id
+            if c.get("name") == container_name:
+                c["image"] = image_uri
+                env = c.get("environment") or []
+                for item in env:
+                    if item.get("name") == "BEDROCK_MODEL_ID":
+                        item["value"] = bedrock_model_id
+                        break
+                else:
+                    env.append({"name": "BEDROCK_MODEL_ID", "value": bedrock_model_id})
+                c["environment"] = env
+                updated = True
                 break
-            else:
-              env.append({"name": "BEDROCK_MODEL_ID", "value": bedrock_model_id})
-
-            c["environment"] = env
-            updated = True
-            break
 
         if not updated:
-          names = [c.get("name") for c in td.get("containerDefinitions", [])]
-          raise SystemExit(f"Container name not found: {container_name}. available={names}")
+            raise SystemExit("Container not found: " + container_name)
 
         new_path = base / "newtaskdef.json"
         with new_path.open("w", encoding="utf-8") as f:
-          json.dump(td, f)
+            json.dump(td, f)
 
-        print("Rendered:", str(new_path))
+        print("Rendered:", new_path)
         PY
+
+        ls -la "{{ playbook_dir }}"
       environment:
         PLAYBOOK_DIR: "{{ playbook_dir }}"
         CONTAINER_NAME: "{{ container_name }}"
         IMAGE_URI: "{{ image_uri }}"
         BEDROCK_MODEL_ID: "{{ bedrock_model_id }}"
+
 
     - name: "ANSIBLE | Register new task definition"
       ansible.builtin.command: >
