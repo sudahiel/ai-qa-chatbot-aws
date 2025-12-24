@@ -82,7 +82,8 @@
         content: "{{ td_json.stdout }}"
 
     - name: "ANSIBLE | Render newtaskdef.json (update image + BEDROCK_MODEL_ID)"
-      ansible.builtin.command: python - << 'PY'
+      ansible.builtin.command: |
+        python - << 'PY'
         import json, os, pathlib
 
         base = pathlib.Path(os.environ["PLAYBOOK_DIR"])
@@ -133,11 +134,13 @@
           json.dump(td, f)
 
         print("Rendered:", str(new_path))
+        PY
       environment:
         PLAYBOOK_DIR: "{{ playbook_dir }}"
         CONTAINER_NAME: "{{ container_name }}"
         IMAGE_URI: "{{ image_uri }}"
         BEDROCK_MODEL_ID: "{{ bedrock_model_id }}"
+
 
     - name: "ANSIBLE | Register new task definition"
       ansible.builtin.command: >
