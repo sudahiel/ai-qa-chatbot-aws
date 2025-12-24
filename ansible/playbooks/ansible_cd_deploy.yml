@@ -121,6 +121,7 @@
         for c in td.get("containerDefinitions", []):
             if c.get("name") == container_name:
                 c["image"] = image_uri
+
                 env = c.get("environment") or []
                 for item in env:
                     if item.get("name") == "BEDROCK_MODEL_ID":
@@ -128,6 +129,7 @@
                         break
                 else:
                     env.append({"name": "BEDROCK_MODEL_ID", "value": bedrock_model_id})
+
                 c["environment"] = env
                 updated = True
                 break
@@ -143,12 +145,13 @@
         PY
 
         ls -la "{{ playbook_dir }}"
+      args:
+        executable: /bin/bash
       environment:
         PLAYBOOK_DIR: "{{ playbook_dir }}"
         CONTAINER_NAME: "{{ container_name }}"
         IMAGE_URI: "{{ image_uri }}"
         BEDROCK_MODEL_ID: "{{ bedrock_model_id }}"
-
 
     - name: "ANSIBLE | Register new task definition"
       ansible.builtin.command: >
