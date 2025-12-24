@@ -1,5 +1,5 @@
 ﻿- name: "Ansible | CD | Deploy to ECS (taskdef update + wait stable)"
-  hosts: localhost
+  hosts: dev
   gather_facts: false
 
   vars:
@@ -16,6 +16,14 @@
           - image_uri is defined
           - image_uri | length > 0
         fail_msg: "Please pass -e image_uri=<ECR image URI>"
+
+    - name: "ANSIBLE | Debug loaded vars (bedrock_model_id)"
+      ansible.builtin.debug:
+        msg:
+          - "inventory_hostname={{ inventory_hostname }}"
+          - "group_names={{ group_names }}"
+          - "bedrock_model_id={{ bedrock_model_id | default('') }}"
+          
 
     - name: "ANSIBLE | Assert bedrock_model_id provided"
       ansible.builtin.assert:
