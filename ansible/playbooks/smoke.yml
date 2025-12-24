@@ -1,4 +1,4 @@
-﻿- name: AI Q&A Chatbot Smoke Test (CloudFront -> S3 + /api/* -> ALB -> ECS -> Bedrock)
+- name: AI Q&A Chatbot Smoke Test (CloudFront -> S3 + /api/* -> ALB -> ECS -> Bedrock)
   hosts: localhost
   gather_facts: false
 

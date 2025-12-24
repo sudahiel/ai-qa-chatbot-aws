@@ -1,4 +1,4 @@
-﻿- name: "Ansible | CD | Deploy to ECS (taskdef update + wait stable)"
+- name: "Ansible | CD | Deploy to ECS (taskdef update + wait stable)"
   hosts: dev
   gather_facts: false
 

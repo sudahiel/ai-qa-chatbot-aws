@@ -1,4 +1,4 @@
-﻿all:
+all:
   children:
     dev:
       hosts:

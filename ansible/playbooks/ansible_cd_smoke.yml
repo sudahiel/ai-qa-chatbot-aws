@@ -1,4 +1,4 @@
-﻿- name: "Ansible | CD | Smoke Test"
+- name: "Ansible | CD | Smoke Test"
   hosts: dev
   gather_facts: false
 
