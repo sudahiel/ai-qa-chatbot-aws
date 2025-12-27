@@ -8,7 +8,8 @@ def deploy_phase2(ecr_repo_url: pulumi.Input[str]):
     stack = pulumi.get_stack()
 
     # 你 Phase 1 已 push 的 image tag
-    image_uri = pulumi.Output.concat(ecr_repo_url, ":dev-latest")
+    image_uri = pulumi.Output.concat(ecr_repo_url, f":{stack}-latest")
+
 
     # -----------------------------
     # Network: Minimal public VPC
