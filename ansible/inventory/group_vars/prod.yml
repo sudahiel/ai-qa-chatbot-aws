@@ -1,0 +1,13 @@
+# pord 環境設定
+aws_region: ap-northeast-1
+#pulumi_workdir: ../infra
+pulumi_stack: prod
+
+container_name: backend
+
+# 強制 Bedrock Model（避免 stuck on nova）
+bedrock_model_id: arn:aws:bedrock:ap-northeast-1:472655909477:inference-profile/apac.amazon.nova-micro-v1:0
+
+# 你現在 dev 的 CloudFront（你原本 all.yml 寫死的）
+cloudfront_domain: d1ffrixef4kpsf.cloudfront.net
+base_url: "https://{{ cloudfront_domain }}"

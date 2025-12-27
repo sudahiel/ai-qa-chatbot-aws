@@ -1,10 +1,10 @@
 - name: "Ansible | CD | Deploy to ECS (taskdef update + wait stable)"
-  hosts: dev
+  hosts: "{{ target_env | default('dev') }}"
   gather_facts: false
 
   vars:
     aws_region_default: "ap-northeast-1"
-    pulumi_stack_default: "dev"
+    pulumi_stack_default: "{{ target_env | default('dev') }}"
 
     # Always derive repo root + infra path from this playbook location.
     # playbook_dir: .../ansible/playbooks

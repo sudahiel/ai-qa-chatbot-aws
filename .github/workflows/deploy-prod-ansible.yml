@@ -1,4 +1,4 @@
-name: Deploy backend to ECS (dev) - via Ansible CD
+name: Deploy backend to ECS (prod) - via Ansible CD
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ permissions:
 
 env:
   AWS_REGION: ap-northeast-1
-  ECR_REPO: ai-qa-chatbot-infra-dev
+  ECR_REPO: ai-qa-chatbot-infra-prod
 
 jobs:
   deploy:
@@ -29,7 +29,7 @@ jobs:
       - name: Configure AWS credentials (assume role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::472655909477:role/ai-qa-chatbot-ci-deploy-dev
+          role-to-assume: arn:aws:iam::472655909477:role/ai-qa-chatbot-ci-deploy-prod
           aws-region: ${{ env.AWS_REGION }}
 
       # -----------------------------
@@ -46,13 +46,22 @@ jobs:
           set -euo pipefail
           COMMIT_SHA="$(git rev-parse HEAD)"
           SHORT_SHA="${COMMIT_SHA::7}"
+
           IMAGE_URI_SHA="${REGISTRY}/${ECR_REPO}:gitsha-${SHORT_SHA}"
+          IMAGE_URI_LATEST="${REGISTRY}/${ECR_REPO}:prod-latest"
 
-          docker build -t "${IMAGE_URI_SHA}" ./app/backend
+          # 一次 build，打兩個 tag
+          docker build -t "${IMAGE_URI_SHA}" -t "${IMAGE_URI_LATEST}" ./app/backend
+
+          # 兩個都推
           docker push "${IMAGE_URI_SHA}"
+          docker push "${IMAGE_URI_LATEST}"
 
+          # Ansible 用不可變 tag（gitsha）
           echo "IMAGE_URI=${IMAGE_URI_SHA}" >> "$GITHUB_ENV"
-          echo "[INFO] IMAGE_URI=${IMAGE_URI_SHA}"
+          echo "[INFO] IMAGE_URI_SHA=${IMAGE_URI_SHA}"
+          echo "[INFO] IMAGE_URI_LATEST=${IMAGE_URI_LATEST}"
+
 
       # -----------------------------
       # Pulumi (這段你原本完全缺)
@@ -92,9 +101,9 @@ jobs:
           set -euo pipefail
           cd ansible
           ansible-playbook \
-            -i inventory/dev.yml \
+            -i inventory/prod.yml \
             playbooks/ansible_cd_deploy.yml \
-            -e "target_env=dev image_uri=${IMAGE_URI}" \
+            -e "target_env=prod image_uri=${IMAGE_URI}" \
             -vv
 
 
