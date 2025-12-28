@@ -68,7 +68,7 @@ pulumi destroy
 ```
 
 所有資源皆可由相同的 Pulumi 程式碼再次重建，
-不依賴任何手動建立或帳號狀態殘留。
+基礎設施本身不依賴手動建立，可由相同 IaC 程式碼重建（CI/CD IAM 屬於一次性平台設定，見 README Phase 8）。
 
 此流程用於驗證系統是否支援完整生命週期管理
 （deploy / update / destroy / recreate）。
@@ -112,6 +112,22 @@ pulumi destroy
 
 CI pipeline 不負責基礎設施變更，  
 基礎設施生命週期仍完全由 Pulumi 管理。
+
+---
+### 3.3.1 Frontend 部署與必要 IAM 權限
+
+本專案的 deploy workflow 同時包含：
+
+- Backend：ECR image → Ansible 更新 ECS service
+- Frontend：將 `frontend/` 靜態檔案同步至 frontend S3 bucket
+
+因此 CI/CD Deploy Role（GitHub Actions assume role）需具備
+**限定單一 frontend bucket 範圍**的 S3 權限，以支援：
+
+- `aws s3 sync --delete`（需要 `s3:ListBucket` / `s3:PutObject` / `s3:DeleteObject`）
+
+CI/CD IAM policy（例如 `ai-qa-chatbot-ci-frontend-s3-dev`）由 Infra Admin 一次性建立並掛載，
+不隨 Pulumi stack destroy / recreate。
 
 ---
 
