@@ -97,6 +97,26 @@ jobs:
             -e "target_env=dev image_uri=${IMAGE_URI}" \
             -vv
 
+      # -----------------------------
+      # Frontend deploy (S3)
+      # -----------------------------
+      - name: Deploy frontend to S3 (dev)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "[INFO] Sync frontend assets to s3://${FRONTEND_BUCKET}/"
+
+          # 1) Upload everything except index.html with long cache
+          aws s3 sync frontend/ "s3://${FRONTEND_BUCKET}/" \
+            --delete \
+            --exclude "index.html" \
+            --cache-control "public, max-age=31536000, immutable"
+
+          # 2) Upload index.html with no-cache so updates show immediately
+          aws s3 cp "frontend/index.html" "s3://${FRONTEND_BUCKET}/index.html" \
+            --content-type "text/html" \
+            --cache-control "no-cache, no-store, must-revalidate"
 
 
       - name: Smoke via Ansible (CD)
