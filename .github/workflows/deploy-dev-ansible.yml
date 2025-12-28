@@ -15,6 +15,7 @@ permissions:
 env:
   AWS_REGION: ap-northeast-1
   ECR_REPO: ai-qa-chatbot-infra-dev
+  FRONTEND_BUCKET: ai-qa-chatbot-infra-dev-frontend
 
 jobs:
   deploy:
