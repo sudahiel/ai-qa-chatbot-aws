@@ -161,6 +161,18 @@ GitHub Actions 在此階段負責 CI（build / image push）與流程 orchestrat
 
 ---
 
+### Multi-environment CI/CD（dev / prod）
+
+本專案支援 dev / prod 兩個環境，CI/CD 亦採相同的環境隔離原則：
+
+- dev / prod 使用不同的 GitHub Actions workflow（或以 workflow inputs 區分）
+- 使用不同的 IAM role，避免 dev pipeline 影響 prod：
+  - `ai-qa-chatbot-ci-deploy-dev`
+  - `ai-qa-chatbot-ci-deploy-prod`
+- Frontend S3 bucket 與 ECS service 皆依環境區隔
+- 實際部署目標（cluster / service / bucket）皆由 Pulumi stack outputs 動態取得
+
+
 ## Phase 4 – Frontend on CloudFront + S3（已完成）
 
 - S3 Private Bucket + CloudFront Origin Access Control
@@ -233,6 +245,40 @@ GitHub Actions
 - Chat API Bedrock inference path
 
 Smoke test 任一項失敗，即視為 deploy 失敗。
+---
+
+## Phase 6.8 – Frontend Deployment via CI/CD（已完成）
+
+前端靜態網站的部署已正式納入 CI/CD pipeline，
+由 GitHub Actions 在同一條 deploy workflow 中執行。
+
+### 部署方式
+
+- 前端檔案來源：`frontend/index.html`
+- 部署目標：S3 bucket（frontend）
+- 對外服務入口：CloudFront（與 `/api/*` 共用同一網域）
+
+### 快取策略設計（重要）
+
+為避免 CloudFront / browser cache 導致前端更新未即時反映，
+前端部署採用以下策略：
+
+- **`index.html`**
+  - 設定為 `no-cache, no-store, must-revalidate`
+  - 確保每次部署後 UI 可立即更新
+- **其餘靜態資源（如未來的 JS/CSS）**
+  - 採用長快取（`max-age=31536000, immutable`）
+
+### 實作重點
+
+- 前端部署與 backend deploy 位於同一條 CD pipeline
+- 避免人為手動上傳 S3
+- 修正早期「CI 已跑但前端畫面未更新」的實務問題
+
+此設計同時兼顧：
+- CDN 效能
+- UI 更新即時性
+- 工程可維運性
 
 ---
 
@@ -271,7 +317,19 @@ Smoke test 任一項失敗，即視為 deploy 失敗。
   - ECR push
   - ECS RegisterTaskDefinition / UpdateService
   - 限定範圍 `iam:PassRole`
+  - **Frontend S3 deploy（限定單一 bucket）**
 - 不具備 Bedrock 權限
+
+Frontend S3 權限實作說明：
+
+- 另行建立最小權限 policy（例如：`ai-qa-chatbot-ci-frontend-s3-dev`）
+- 僅允許以下行為：
+  - `s3:ListBucket`
+  - `s3:PutObject`
+  - `s3:DeleteObject`
+- Resource 限定於指定 frontend bucket ARN
+- 支援 `aws s3 sync --delete`，但不具備跨 bucket 存取能力
+
 
 **Runtime Role（ECS Task Role）**
 
@@ -314,8 +372,7 @@ Pulumi 僅在以下情境執行：
   用於完整移除該 stack 所建立的 AWS 資源，  
   以驗證基礎設施可被乾淨銷毀，並可隨時透過 IaC 重建。
 
-本專案已實際執行 `pulumi destroy` 於 prod stack，  
-確認所有資源（ECS、ALB、CloudFront、S3、ECR、IAM）  
+確認所有 由 Pulumi 管理的資源（ECS、ALB、CloudFront、S3、ECR、IAM）
 皆可由 IaC 完整管理並移除。
 
 ### Design Principle
