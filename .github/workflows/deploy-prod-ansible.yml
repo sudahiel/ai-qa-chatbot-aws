@@ -15,6 +15,7 @@ permissions:
 env:
   AWS_REGION: ap-northeast-1
   ECR_REPO: ai-qa-chatbot-infra-prod
+  FRONTEND_BUCKET: ai-qa-chatbot-infra-prod-frontend
 
 jobs:
   deploy:
@@ -90,7 +91,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ansible-inventory -i ansible/inventory/dev.yml --host localhost --yaml | sed -n '1,200p'
+          ansible-inventory -i ansible/inventory/prod.yml --host localhost --yaml | sed -n '1,200p'
 
       - name: Deploy via Ansible (CD)
         shell: bash
@@ -106,6 +107,23 @@ jobs:
             -e "target_env=prod image_uri=${IMAGE_URI}" \
             -vv
 
+      # -----------------------------
+      # Frontend deploy (S3)
+      # -----------------------------
+      - name: Deploy frontend to S3 (prod)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "[INFO] Sync frontend assets to s3://${FRONTEND_BUCKET}/"
+
+          aws s3 sync frontend/ "s3://${FRONTEND_BUCKET}/" \
+            --delete \
+            --exclude "index.html" \
+            --cache-control "public, max-age=31536000, immutable"
+
+          aws s3 cp "frontend/index.html" "s3://${FRONTEND_BUCKET}/index.html" \
+            --content-type "text/html" \
+            --cache-control "no-cache, no-store, must-revalidate"
 
 
       - name: Smoke via Ansible (CD)
@@ -116,6 +134,7 @@ jobs:
           set -euo pipefail
           cd ansible
           ansible-playbook \
-            -i inventory/dev.yml \
+            -i inventory/prod.yml \
             playbooks/ansible_cd_smoke.yml \
             -vv
+
