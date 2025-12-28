@@ -46,7 +46,10 @@
 
 ---
 
+
 ## 高階架構概覽（High-Level Architecture）
+
+![Architecture Diagram](docs/architecture.png)
 
 ### 已完成架構
 
@@ -73,7 +76,9 @@
 
 ### 環境資訊
 
-- Pulumi Stack：dev
+- Pulumi Stacks：
+  - dev（常駐，用於開發與驗證）
+  - prod（已驗證可建立與銷毀，目前為保持帳號乾淨已 destroy）
 - AWS Region：ap-northeast-1（Tokyo）
 - Backend Runtime：ECS Fargate
 
@@ -124,7 +129,9 @@ pulumi stack output cloudfront_domain_name
 - image tag 以 git commit SHA 標記
 - 不在 CI 直接修改基礎設施
 
-GitHub Actions 在此階段僅負責 CI 與流程 orchestration。
+GitHub Actions 在此階段負責 CI（build / image push）與流程 orchestration，
+不直接執行 runtime 部署。
+
 
 ---
 
@@ -160,8 +167,9 @@ GitHub Actions 在此階段僅負責 CI 與流程 orchestration。
 本專案使用 Ansible 作為實際的 Continuous Deployment（CD）執行引擎，  
 由 GitHub Actions 在 pipeline 中呼叫。
 
-GitHub Actions 的角色為 pipeline orchestration，  
-Ansible 則負責實際的部署行為與狀態驗證。
+GitHub Actions 負責 CI（build / test / image push）與 pipeline orchestration；  
+實際的部署行為（更新 ECS service）由 Ansible playbook 執行，作為 CD engine。
+
 
 ### 實際 CI / CD 流程
 
@@ -256,9 +264,40 @@ Smoke test 任一項失敗，即視為 deploy 失敗。
 
 ## Infrastructure Lifecycle（IaC）
 
-- `pulumi preview`
-- `pulumi up`
-- `pulumi destroy`
+本專案使用 Pulumi 管理所有 AWS 基礎設施，  
+並刻意驗證 **完整生命週期（create / update / destroy）** 的可行性。
+
+### Provision / Update
+
+- `pulumi preview`  
+  用於檢視即將變更的基礎設施，作為變更前的安全檢查。
+- `pulumi up`  
+  實際建立或更新基礎設施（ECS、ALB、CloudFront、S3、IAM 等）。
+
+Pulumi 僅在以下情境執行：
+
+- 環境首次建立（dev / prod stack）
+- 基礎設施設計變更
+- 完整環境重建（recreate）
+
+日常應用程式部署 **不會** 透過 Pulumi 進行。
+
+### Destroy / Recreate
+
+- `pulumi destroy`  
+  用於完整移除該 stack 所建立的 AWS 資源，  
+  以驗證基礎設施可被乾淨銷毀，並可隨時透過 IaC 重建。
+
+本專案已實際執行 `pulumi destroy` 於 prod stack，  
+確認所有資源（ECS、ALB、CloudFront、S3、ECR、IAM）  
+皆可由 IaC 完整管理並移除。
+
+### Design Principle
+
+- 基礎設施與應用程式部署責任分離  
+- Pulumi 專注於 infrastructure lifecycle  
+- CI/CD pipeline 專注於 application delivery  
+- 避免隱性自動化，確保變更可預期、可追蹤
 
 ---
 
@@ -280,5 +319,5 @@ Smoke test 任一項失敗，即視為 deploy 失敗。
 - [x] Amazon Bedrock integration
 - [x] Observability
 - [x] IAM least-privilege hardening
-- [ ] Multi-environment（prod stack）
-- [ ] 架構圖補齊
+- [x] Multi-environment（dev / prod stack supported）
+- [x] 架構圖補齊
