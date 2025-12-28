@@ -104,6 +104,32 @@ pulumi stack output alb_dns_name
 pulumi stack output cloudfront_domain_name 
 ```
 
+## How to Use This Repository
+
+本專案設計為可在「全新、乾淨的 AWS 帳號」中重現。  
+以下說明如何使用本 repository 所提供的材料（Pulumi、Ansible、CI/CD pipeline），  
+完成基礎設施建立、應用程式部署，以及系統驗證。
+
+### Prerequisites（使用前準備）
+
+- 一個可使用的 AWS 帳號
+- 已設定完成的 AWS CLI（具備必要權限）
+- Pulumi CLI
+- Ansible
+- Docker
+- GitHub 帳號（用於 CI/CD）
+
+### High-level Usage Flow（使用流程概覽）
+
+1. Clone 本 repository。
+2. 使用 Pulumi 建立或更新基礎設施。
+3. 透過 CI/CD pipeline 建置並部署應用程式。
+4. 透過提供的 endpoint 驗證系統是否正常運作。
+5. （選擇性）銷毀並重新建立環境，以驗證完整生命週期。
+
+更詳細的逐步操作說明，請參考 `docs/lifecycle.md`。
+
+
 ## Phase 2 – Backend on AWS（已完成）
 
 ### 架構摘要
